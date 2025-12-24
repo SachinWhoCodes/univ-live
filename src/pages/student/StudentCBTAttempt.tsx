@@ -24,7 +24,7 @@ export default function StudentCBTAttempt() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentSectionId, setCurrentSectionId] = useState(questions[0]?.sectionId || "");
-  const [responses, setResponses] = useState<Record<string, { answer: string | null; markedForReview: boolean; visited: boolean }>>({});
+  const [responses, setResponses] = useState<Record<string, { answer: string | null; markedForReview: boolean; visited: boolean; answered: boolean }>>({});
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState((test?.duration || 60) * 60);
 
@@ -41,7 +41,7 @@ export default function StudentCBTAttempt() {
       }
     }
     const initial: typeof responses = {};
-    questions.forEach(q => { initial[q.id] = { answer: null, markedForReview: false, visited: false }; });
+    questions.forEach(q => { initial[q.id] = { answer: null, markedForReview: false, visited: false, answered: false }; });
     setResponses(initial);
   }, [testId]);
 
@@ -66,7 +66,7 @@ export default function StudentCBTAttempt() {
   const passage = currentQuestion?.passageId ? passages.find(p => p.id === currentQuestion.passageId) : null;
 
   const handleAnswer = (answer: string) => {
-    setResponses(prev => ({ ...prev, [currentQuestion.id]: { ...prev[currentQuestion.id], answer } }));
+    setResponses(prev => ({ ...prev, [currentQuestion.id]: { ...prev[currentQuestion.id], answer, answered: !!answer } }));
   };
 
   const handleMarkForReview = () => {
@@ -74,7 +74,7 @@ export default function StudentCBTAttempt() {
   };
 
   const handleClearResponse = () => {
-    setResponses(prev => ({ ...prev, [currentQuestion.id]: { ...prev[currentQuestion.id], answer: null } }));
+    setResponses(prev => ({ ...prev, [currentQuestion.id]: { ...prev[currentQuestion.id], answer: null, answered: false } }));
   };
 
   const handleSubmit = () => {
@@ -194,3 +194,4 @@ export default function StudentCBTAttempt() {
     </div>
   );
 }
+
