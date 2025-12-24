@@ -55,6 +55,8 @@ export default function AppRoutes() {
           <Route path="/" element={<TenantHome />} />
           <Route path="/courses" element={<TenantCourses />} />
           <Route path="*" element={<NotFound />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
         </>
       ) : (
         <>

@@ -1,851 +1,523 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Globe,
-  Upload,
-  Palette,
-  Eye,
   Save,
-  ExternalLink,
-  Image,
-  Phone,
-  Mail,
-  MapPin,
-  Facebook,
-  Twitter,
-  Instagram,
-  Youtube,
-  Linkedin,
   Loader2,
+  Plus,
+  Trash2,
+  Trophy,
+  BookOpen
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { toast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthProvider"
-import { db, storage } from "@/lib/firebase";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthProvider"; // ✅ Uses your specific Context
+import { db } from "@/lib/firebase";
 import {
   doc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
+  getDoc,
+  getDocs,
   updateDoc,
+  collection,
+  query,
+  where
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { toast } from "sonner";
 
-type ThemeId = "theme1" | "theme2";
+// --- Types ---
+type StatItem = { label: string; value: string; icon: string };
+type AchievementItem = { title: string; description: string; icon: string };
+type FacultyItem = { name: string; subject: string; designation: string; experience: string; bio: string; image: string };
+type TestimonialItem = { name: string; course: string; rating: number; text: string; avatar: string };
+type CourseItem = {
+  id: string; 
+  title: string;
+  price: number;
+  discountPrice?: number;
+  image: string;
+  enrolledCount?: number;
+  rating?: string;
+};
 
-const themes: Array<{
-  id: ThemeId;
-  name: string;
-  description: string;
-  preview: string;
-}> = [
-  {
-    id: "theme1",
-    name: "Modern Minimal",
-    description: "Clean and professional with focus on content",
-    preview: "gradient-bg",
-  },
-  {
-    id: "theme2",
-    name: "Classic Academic",
-    description: "Traditional educational institution feel",
-    preview: "bg-blue-900",
-  },
+// Available Icons for selection
+const ICON_OPTIONS = [
+  { value: "users", label: "Users" },
+  { value: "trophy", label: "Trophy" },
+  { value: "star", label: "Star" },
+  { value: "target", label: "Target" },
+  { value: "graduation-cap", label: "Graduation Cap" },
+  { value: "award", label: "Award" },
+  { value: "trending-up", label: "Trending Up" },
 ];
 
-type WebsiteConfig = {
-  coachingName: string;
-  tagline: string;
-  themeId: ThemeId;
-  branding: {
-    logoUrl: string | null;
-    primaryColor?: string | null;
-    accentColor?: string | null;
-  };
-  contact: {
-    phone: string | null;
-    email: string | null;
-    city: string | null;
-    address: string | null;
-  };
-  about: {
-    description: string;
-    achievements: Array<{ value: string; label: string }>;
-  };
-  socials: {
-    facebook?: string | null;
-    twitter?: string | null;
-    instagram?: string | null;
-    youtube?: string | null;
-    linkedin?: string | null;
-    website?: string | null;
-  };
-  images?: {
-    heroImages?: string[];
-  };
-};
-
-const DEFAULT_CONFIG: WebsiteConfig = {
-  coachingName: "",
-  tagline: "",
-  themeId: "theme1",
-  branding: { logoUrl: null, primaryColor: "#6D28D9", accentColor: "#22C55E" },
-  contact: { phone: null, email: null, city: null, address: null },
-  about: {
-    description: "",
-    achievements: [
-      { value: "500+", label: "Students Selected" },
-      { value: "15+", label: "Years Experience" },
-      { value: "50+", label: "Expert Faculty" },
-    ],
-  },
-  socials: {
-    facebook: null,
-    twitter: null,
-    instagram: null,
-    youtube: null,
-    linkedin: null,
-    website: null,
-  },
-  images: { heroImages: [] },
-};
-
 export default function WebsiteSettings() {
-  const { profile } = useAuth();
-
-  const educatorId = profile?.educatorId || "";
-  const tenantSlug = profile?.tenantSlug || "";
-
-  const [selectedTheme, setSelectedTheme] = useState<ThemeId>("theme1");
-  const [isSaving, setIsSaving] = useState(false);
+  // ✅ FIX: Destructure firebaseUser instead of user
+  const { firebaseUser } = useAuth(); 
+  
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Meta
-  const [websiteStatus, setWebsiteStatus] = useState<string>("NOT_CREATED");
-
-  // Form state
+  // --- Data State ---
   const [coachingName, setCoachingName] = useState("");
   const [tagline, setTagline] = useState("");
+  const [heroImage, setHeroImage] = useState("");
+  const [availableTests, setAvailableTests] = useState<any[]>([]);
+  
+  // Complex Lists
+  const [stats, setStats] = useState<StatItem[]>([]);
+  const [achievements, setAchievements] = useState<AchievementItem[]>([]);
+  const [faculty, setFaculty] = useState<FacultyItem[]>([]);
+  const [testimonials, setTestimonials] = useState<TestimonialItem[]>([]);
+  const [selectedCourses, setSelectedCourses] = useState<CourseItem[]>([]);
 
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-
-  const [aboutDescription, setAboutDescription] = useState("");
-  const [achievements, setAchievements] = useState<
-    Array<{ value: string; label: string }>
-  >(DEFAULT_CONFIG.about.achievements);
-
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
-
-  const [facebook, setFacebook] = useState("");
-  const [twitter, setTwitter] = useState("");
-  const [instagram, setInstagram] = useState("");
-  const [youtube, setYoutube] = useState("");
-  const [linkedin, setLinkedin] = useState("");
-  const [website, setWebsite] = useState("");
-
-  const [heroImages, setHeroImages] = useState<string[]>([]);
-
-  const logoInputRef = useRef<HTMLInputElement | null>(null);
-  const heroInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-
-  const siteUrl = useMemo(() => {
-    if (!tenantSlug) return "";
-    return `https://${tenantSlug}.univ.live`;
-  }, [tenantSlug]);
-
-  // Load educator meta + website config (live)
+  // Load Data
   useEffect(() => {
-    if (!educatorId) return;
+    async function loadData() {
+      // ✅ FIX: Check firebaseUser
+      if (!firebaseUser) return;
+      
+      try {
+        setLoading(true);
 
-    setLoading(true);
-
-    const unsubEducator = onSnapshot(
-      doc(db, "educators", educatorId),
-      (snap) => {
-        const d = snap.data() as any;
-        setWebsiteStatus(String(d?.websiteStatus || "NOT_CREATED"));
-        // if coachingName not set in config yet, keep it in sync
-        if (typeof d?.coachingName === "string" && !coachingName) {
-          setCoachingName(d.coachingName);
+        // 1. Fetch Educator Settings using firebaseUser.uid
+        const docRef = doc(db, "educators", firebaseUser.uid);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setCoachingName(data.coachingName || "");
+          setTagline(data.tagline || "");
+          
+          const config = data.websiteConfig || {};
+          setHeroImage(config.heroImage || "");
+          setStats(config.stats || []);
+          setAchievements(config.achievements || []);
+          setFaculty(config.faculty || []);
+          setTestimonials(config.testimonials || []);
+          setSelectedCourses(config.courses || []);
         }
-      }
-    );
 
-    const configRef = doc(db, "educators", educatorId, "websiteConfig", "default");
-    const unsubConfig = onSnapshot(
-      configRef,
-      (snap) => {
-        const d = (snap.exists() ? (snap.data() as any) : {}) as Partial<WebsiteConfig>;
-        const merged: WebsiteConfig = {
-          ...DEFAULT_CONFIG,
-          ...d,
-          branding: { ...DEFAULT_CONFIG.branding, ...(d.branding || {}) },
-          contact: { ...DEFAULT_CONFIG.contact, ...(d.contact || {}) },
-          about: {
-            ...DEFAULT_CONFIG.about,
-            ...(d.about || {}),
-            achievements:
-              (d.about?.achievements as any) ||
-              DEFAULT_CONFIG.about.achievements,
-          },
-          socials: { ...DEFAULT_CONFIG.socials, ...(d.socials || {}) },
-          images: {
-            ...DEFAULT_CONFIG.images,
-            ...(d.images || {}),
-            heroImages: (d.images?.heroImages as any) || [],
-          },
-        };
-
-        setSelectedTheme(merged.themeId);
-        setCoachingName(merged.coachingName || "");
-        setTagline(merged.tagline || "");
-
-        setLogoUrl(merged.branding.logoUrl || null);
-
-        setAboutDescription(merged.about.description || "");
-        setAchievements(
-          Array.isArray(merged.about.achievements) && merged.about.achievements.length
-            ? merged.about.achievements.slice(0, 3)
-            : DEFAULT_CONFIG.about.achievements
+        // 2. Fetch Available Tests (to use as Courses)
+        const testsQuery = query(
+          collection(db, "tests"),
+          where("educatorId", "==", firebaseUser.uid)
         );
+        const testsSnap = await getDocs(testsQuery);
+        const testsData = testsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAvailableTests(testsData);
 
-        setPhone(String(merged.contact.phone || ""));
-        setEmail(String(merged.contact.email || ""));
-        setAddress(String(merged.contact.address || ""));
-
-        setFacebook(String(merged.socials.facebook || ""));
-        setTwitter(String(merged.socials.twitter || ""));
-        setInstagram(String(merged.socials.instagram || ""));
-        setYoutube(String(merged.socials.youtube || ""));
-        setLinkedin(String(merged.socials.linkedin || ""));
-        setWebsite(String(merged.socials.website || ""));
-
-        setHeroImages(Array.isArray(merged.images?.heroImages) ? merged.images!.heroImages! : []);
+      } catch (error) {
+        console.error("Error loading settings:", error);
+        toast.error("Failed to load website settings");
+      } finally {
         setLoading(false);
-      },
-      () => setLoading(false)
-    );
-
-    return () => {
-      unsubEducator();
-      unsubConfig();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [educatorId]);
-
-  const uploadToStorage = async (file: File, path: string) => {
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
-  };
-
-  const onPickLogo = async (file: File) => {
-    if (!educatorId) return;
-    try {
-      const url = await uploadToStorage(
-        file,
-        `educators/${educatorId}/branding/logo-${Date.now()}-${file.name}`
-      );
-      setLogoUrl(url);
-      toast({
-        title: "Logo uploaded",
-        description: "Don’t forget to click Save Changes.",
-      });
-    } catch (e: any) {
-      toast({ title: "Logo upload failed", description: e?.message || "Try again." });
-    }
-  };
-
-  const onPickHero = async (slotIndex: number, file: File) => {
-    if (!educatorId) return;
-    try {
-      const url = await uploadToStorage(
-        file,
-        `educators/${educatorId}/images/hero-${slotIndex + 1}-${Date.now()}-${file.name}`
-      );
-      setHeroImages((prev) => {
-        const next = [...prev];
-        // ensure array length
-        while (next.length < 3) next.push("");
-        next[slotIndex] = url;
-        return next.filter((x) => x !== "");
-      });
-      toast({
-        title: "Hero image uploaded",
-        description: "Don’t forget to click Save Changes.",
-      });
-    } catch (e: any) {
-      toast({ title: "Upload failed", description: e?.message || "Try again." });
-    }
-  };
-
-  const handleSave = async () => {
-    if (!educatorId) return;
-
-    setIsSaving(true);
-    try {
-      const configRef = doc(db, "educators", educatorId, "websiteConfig", "default");
-
-      const payload: Partial<WebsiteConfig> = {
-        coachingName: coachingName.trim(),
-        tagline: tagline.trim(),
-        themeId: selectedTheme,
-        branding: {
-          logoUrl: logoUrl || null,
-          primaryColor: DEFAULT_CONFIG.branding.primaryColor,
-          accentColor: DEFAULT_CONFIG.branding.accentColor,
-        },
-        contact: {
-          phone: phone.trim() || null,
-          email: email.trim() || null,
-          city: null,
-          address: address.trim() || null,
-        },
-        about: {
-          description: aboutDescription.trim(),
-          achievements: achievements.map((a) => ({
-            value: String(a.value || "").trim(),
-            label: String(a.label || "").trim(),
-          })),
-        },
-        socials: {
-          facebook: facebook.trim() || null,
-          twitter: twitter.trim() || null,
-          instagram: instagram.trim() || null,
-          youtube: youtube.trim() || null,
-          linkedin: linkedin.trim() || null,
-          website: website.trim() || null,
-        },
-        images: {
-          heroImages: heroImages.filter(Boolean).slice(0, 3),
-        },
-        // @ts-ignore
-        updatedAt: serverTimestamp(),
-      };
-
-      // config doc (merge safe)
-      await setDoc(configRef, payload as any, { merge: true });
-
-      // Keep tenants mapping in sync (for subdomain resolution + theme)
-      if (tenantSlug) {
-        await setDoc(
-          doc(db, "tenants", tenantSlug),
-          {
-            tenantSlug,
-            educatorId,
-            coachingName: coachingName.trim() || null,
-            themeId: selectedTheme,
-            // status stays whatever you use later
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
       }
+    }
+    loadData();
+  }, [firebaseUser]);
 
-      toast({
-        title: "Settings saved!",
-        description: "Your website has been updated successfully.",
+  // --- Save Handler ---
+  const handleSave = async () => {
+    if (!firebaseUser) return;
+    setSaving(true);
+    try {
+      const docRef = doc(db, "educators", firebaseUser.uid);
+      
+      await updateDoc(docRef, {
+        coachingName,
+        tagline,
+        websiteConfig: {
+          heroImage,
+          stats,
+          achievements,
+          faculty,
+          testimonials,
+          courses: selectedCourses,
+          updatedAt: new Date().toISOString()
+        }
       });
-    } catch (e: any) {
-      toast({
-        title: "Save failed",
-        description: e?.message || "Please try again.",
-      });
+      
+      toast.success("Website updated successfully!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to save changes");
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  const statusBadge = useMemo(() => {
-    const s = String(websiteStatus || "").toUpperCase();
-    const isActive = s === "ACTIVE" || s === "LIVE" || s === "COMPLETED";
-    return (
-      <Badge className={cn(isActive ? "bg-white/20 text-white" : "bg-white/20 text-white")}>
-        {isActive ? "Active" : "Not Created"}
-      </Badge>
-    );
-  }, [websiteStatus]);
+  // --- Helpers for Course/Test Logic ---
+  const toggleCourse = (test: any) => {
+    const exists = selectedCourses.find(c => c.id === test.id);
+    if (exists) {
+      // Remove
+      setSelectedCourses(prev => prev.filter(c => c.id !== test.id));
+    } else {
+      // Add (Map Test Data to Course Data)
+      const newCourse: CourseItem = {
+        id: test.id,
+        title: test.title || "Untitled Course",
+        price: test.price === "Included" ? 0 : Number(test.price) || 999,
+        discountPrice: test.price === "Included" ? 0 : Number(test.price) || 999,
+        image: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=800&q=80", // Default placeholder
+        rating: "4.8",
+        enrolledCount: 100
+      };
+      setSelectedCourses(prev => [...prev, newCourse]);
+    }
+  };
+
+  const updateCourseImage = (id: string, url: string) => {
+    setSelectedCourses(prev => prev.map(c => c.id === id ? { ...c, image: url } : c));
+  };
+
+  // --- Render Helpers ---
+
+  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold">Website Settings</h1>
-          <p className="text-muted-foreground text-sm">
-            Customize your public coaching website
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">Website Builder</h1>
+          <p className="text-muted-foreground">Manage your coaching website content</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (!siteUrl) {
-                toast({ title: "No subdomain yet", description: "Tenant slug not found." });
-                return;
-              }
-              window.open(siteUrl, "_blank", "noreferrer");
-            }}
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            Preview
-          </Button>
-          <Button
-            className="gradient-bg text-white"
-            onClick={handleSave}
-            disabled={isSaving || loading}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Save Changes
-              </>
-            )}
-          </Button>
-        </div>
+        <Button onClick={handleSave} disabled={saving} className="gradient-bg text-white">
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Save className="mr-2 h-4 w-4" /> Save Changes
+        </Button>
       </div>
 
-      {/* Subdomain Preview */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="overflow-hidden">
-          <div className="gradient-bg p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-white/20">
-                  <Globe className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <p className="text-white/80 text-xs">Your website URL</p>
-                  <p className="text-white font-semibold">
-                    {tenantSlug ? `${tenantSlug}.univ.live` : "your-coaching.univ.live"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                {statusBadge}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="bg-white/20 text-white border-0 hover:bg-white/30"
-                  onClick={() => {
-                    if (!siteUrl) {
-                      toast({ title: "No subdomain yet", description: "Tenant slug not found." });
-                      return;
-                    }
-                    window.open(siteUrl, "_blank", "noreferrer");
-                  }}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Visit Site
-                </Button>
-              </div>
-            </div>
-          </div>
-          <CardContent className="p-4 bg-muted/30">
-            <p className="text-sm text-muted-foreground">
-              Want a custom domain? Upgrade to Growth plan to use{" "}
-              <span className="font-medium">yourcoaching.com</span>
-            </p>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      <Tabs defaultValue="basic" className="space-y-6">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="basic">Basic Info</TabsTrigger>
-          <TabsTrigger value="about">About</TabsTrigger>
-          <TabsTrigger value="contact">Contact</TabsTrigger>
-          <TabsTrigger value="theme">Theme</TabsTrigger>
-          <TabsTrigger value="images">Images</TabsTrigger>
+      <Tabs defaultValue="general" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 bg-muted/50 p-1">
+          <TabsTrigger value="general">General & Hero</TabsTrigger>
+          <TabsTrigger value="stats">Stats</TabsTrigger>
+          <TabsTrigger value="courses">Courses</TabsTrigger>
+          <TabsTrigger value="faculty">Faculty</TabsTrigger>
+          <TabsTrigger value="content">Content</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="basic" className="space-y-4">
+        {/* 1. General & Hero */}
+        <TabsContent value="general" className="space-y-4 mt-6">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Coaching Information</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Basic Info</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Coaching Name</Label>
-                  <Input
-                    value={coachingName}
-                    onChange={(e) => setCoachingName(e.target.value)}
-                    placeholder="Your coaching name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tagline</Label>
-                  <Input
-                    value={tagline}
-                    onChange={(e) => setTagline(e.target.value)}
-                    placeholder="A short tagline"
-                  />
-                </div>
+              <div className="grid gap-2">
+                <Label>Coaching Name</Label>
+                <Input value={coachingName} onChange={e => setCoachingName(e.target.value)} placeholder="Ex: Zenith Academy" />
               </div>
-
-              <div className="space-y-2">
-                <Label>Courses Offered</Label>
-                <div className="flex flex-wrap gap-2">
-                  {["CUET", "Mock Tests", "Sectionals", "PYQs"].map((course) => (
-                    <Badge key={course} variant="secondary" className="px-3 py-1">
-                      {course}
-                    </Badge>
-                  ))}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    type="button"
-                    onClick={() =>
-                      toast({
-                        title: "Coming soon",
-                        description: "Course editing will be wired next.",
-                      })
-                    }
-                  >
-                    + Add Course
-                  </Button>
-                </div>
+              <div className="grid gap-2">
+                <Label>Tagline</Label>
+                <Input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Ex: Your Pathway to Success" />
               </div>
-
-              <div className="space-y-2">
-                <Label>Logo</Label>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-xl gradient-bg flex items-center justify-center text-white font-bold text-2xl overflow-hidden">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="logo" className="w-full h-full object-cover" />
-                    ) : (
-                      (coachingName || "UL")
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((w) => w[0])
-                        .join("")
-                        .toUpperCase()
-                    )}
-                  </div>
-
-                  <input
-                    ref={logoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) onPickLogo(f);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-
-                  <Button
-                    variant="outline"
-                    type="button"
-                    onClick={() => logoInputRef.current?.click()}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Logo
-                  </Button>
-                </div>
+              <div className="grid gap-2">
+                <Label>Hero Background Image URL</Label>
+                <Input value={heroImage} onChange={e => setHeroImage(e.target.value)} placeholder="https://..." />
+                <p className="text-xs text-muted-foreground">Paste a direct image link (Unsplash, etc.)</p>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="about" className="space-y-4">
+        {/* 2. Stats */}
+        <TabsContent value="stats" className="space-y-4 mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">About Your Coaching</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>About Description</Label>
-                <Textarea
-                  rows={6}
-                  value={aboutDescription}
-                  onChange={(e) => setAboutDescription(e.target.value)}
-                  placeholder="Tell students about your coaching, experience, and achievements..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Achievements</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {achievements.slice(0, 3).map((a, idx) => (
-                    <div key={idx} className="p-4 rounded-lg border border-border">
-                      <Input
-                        className="text-2xl font-bold border-0 p-0 h-auto focus-visible:ring-0"
-                        value={a.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setAchievements((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], value: v };
-                            return next;
-                          });
-                        }}
-                      />
-                      <Input
-                        className="text-sm text-muted-foreground border-0 p-0 h-auto focus-visible:ring-0"
-                        value={a.label}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setAchievements((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], label: v };
-                            return next;
-                          });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="contact" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Contact Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Phone className="h-4 w-4" />
-                    Phone Number
-                  </Label>
-                  <Input
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    Email
-                  </Label>
-                  <Input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="contact@yourcoaching.com"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
-                  Address
-                </Label>
-                <Textarea
-                  rows={2}
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Full coaching address"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Social Links</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <Facebook className="h-5 w-5 text-blue-600" />
-                    <Input
-                      placeholder="Facebook URL"
-                      value={facebook}
-                      onChange={(e) => setFacebook(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Twitter className="h-5 w-5 text-sky-500" />
-                    <Input
-                      placeholder="Twitter URL"
-                      value={twitter}
-                      onChange={(e) => setTwitter(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Instagram className="h-5 w-5 text-pink-600" />
-                    <Input
-                      placeholder="Instagram URL"
-                      value={instagram}
-                      onChange={(e) => setInstagram(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Youtube className="h-5 w-5 text-red-600" />
-                    <Input
-                      placeholder="YouTube URL"
-                      value={youtube}
-                      onChange={(e) => setYoutube(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Linkedin className="h-5 w-5 text-blue-700" />
-                    <Input
-                      placeholder="LinkedIn URL"
-                      value={linkedin}
-                      onChange={(e) => setLinkedin(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-5 w-5 text-muted-foreground" />
-                    <Input
-                      placeholder="Website URL"
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="theme" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Palette className="h-5 w-5" />
-                Choose Your Theme
-              </CardTitle>
+              <CardTitle>Key Statistics</CardTitle>
+              <CardDescription>Numbers displayed below the hero section.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {themes.map((theme) => (
-                  <motion.div
-                    key={theme.id}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setSelectedTheme(theme.id)}
-                    className={cn(
-                      "rounded-xl border-2 cursor-pointer overflow-hidden transition-colors",
-                      selectedTheme === theme.id
-                        ? "border-primary"
-                        : "border-border hover:border-muted-foreground"
-                    )}
-                  >
-                    <div className={cn("h-32", theme.preview)} />
-                    <div className="p-4 bg-card">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">{theme.name}</h4>
-                        {selectedTheme === theme.id && (
-                          <Badge className="gradient-bg text-white">Active</Badge>
-                        )}
+              {stats.map((stat, idx) => (
+                <div key={idx} className="flex gap-4 mb-4 items-end border-b pb-4 last:border-0">
+                  <div className="grid gap-2 flex-1">
+                    <Label>Label</Label>
+                    <Input value={stat.label} onChange={e => {
+                      const newStats = [...stats]; newStats[idx].label = e.target.value; setStats(newStats);
+                    }} placeholder="Students" />
+                  </div>
+                  <div className="grid gap-2 flex-1">
+                    <Label>Value</Label>
+                    <Input value={stat.value} onChange={e => {
+                      const newStats = [...stats]; newStats[idx].value = e.target.value; setStats(newStats);
+                    }} placeholder="10k+" />
+                  </div>
+                  <div className="grid gap-2 w-32">
+                    <Label>Icon</Label>
+                    <Select value={stat.icon} onValueChange={(val) => {
+                       const newStats = [...stats]; newStats[idx].icon = val; setStats(newStats);
+                    }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ICON_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => setStats(stats.filter((_, i) => i !== idx))}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setStats([...stats, { label: "", value: "", icon: "users" }])}>
+                <Plus className="mr-2 h-4 w-4" /> Add Stat
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 3. Courses (From Tests) */}
+        <TabsContent value="courses" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Featured Courses</CardTitle>
+              <CardDescription>Select created Tests to display as Courses on your homepage.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {availableTests.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No tests found. Create tests in the "Test Series" tab first.
+                </div>
+              )}
+              {availableTests.map(test => {
+                const isSelected = selectedCourses.some(c => c.id === test.id);
+                const currentCourse = selectedCourses.find(c => c.id === test.id);
+
+                return (
+                  <div key={test.id} className={`p-4 rounded-xl border ${isSelected ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${isSelected ? "bg-primary text-white" : "bg-muted"}`}>
+                          <BookOpen className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold">{test.title}</h4>
+                          <p className="text-xs text-muted-foreground">{test.description?.slice(0, 50)}...</p>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {theme.description}
-                      </p>
+                      <Switch checked={isSelected} onCheckedChange={() => toggleCourse(test)} />
                     </div>
-                  </motion.div>
+                    
+                    {isSelected && currentCourse && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pl-12 space-y-3">
+                         <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Display Price</Label>
+                                <Input 
+                                  className="h-8" 
+                                  type="number" 
+                                  value={currentCourse.discountPrice} 
+                                  onChange={(e) => {
+                                      const val = Number(e.target.value);
+                                      setSelectedCourses(prev => prev.map(c => c.id === test.id ? { ...c, discountPrice: val, price: val + 500 } : c))
+                                  }}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Cover Image URL</Label>
+                                <Input 
+                                  className="h-8" 
+                                  placeholder="https://..." 
+                                  value={currentCourse.image} 
+                                  onChange={(e) => updateCourseImage(test.id, e.target.value)}
+                                />
+                            </div>
+                         </div>
+                         <p className="text-[10px] text-muted-foreground">
+                            * This test will appear as a clickable course card on your website.
+                         </p>
+                      </motion.div>
+                    )}
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 4. Faculty */}
+        <TabsContent value="faculty" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Faculty Team</CardTitle>
+              <CardDescription>Add profiles for your educators.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-6">
+                {faculty.map((member, idx) => (
+                  <div key={idx} className="p-4 border rounded-xl relative group bg-muted/20">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="absolute top-2 right-2 text-destructive hover:bg-destructive/10"
+                      onClick={() => setFaculty(faculty.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Name</Label>
+                        <Input value={member.name} onChange={e => {
+                          const list = [...faculty]; list[idx].name = e.target.value; setFaculty(list);
+                        }} placeholder="Dr. John Doe" />
+                      </div>
+                      <div className="space-y-2">
+                         <Label>Subject</Label>
+                         <Input value={member.subject} onChange={e => {
+                          const list = [...faculty]; list[idx].subject = e.target.value; setFaculty(list);
+                        }} placeholder="Physics" />
+                      </div>
+                      <div className="space-y-2">
+                         <Label>Designation</Label>
+                         <Input value={member.designation} onChange={e => {
+                          const list = [...faculty]; list[idx].designation = e.target.value; setFaculty(list);
+                        }} placeholder="Senior Faculty" />
+                      </div>
+                      <div className="space-y-2">
+                         <Label>Experience</Label>
+                         <Input value={member.experience} onChange={e => {
+                          const list = [...faculty]; list[idx].experience = e.target.value; setFaculty(list);
+                        }} placeholder="10+ Years" />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                         <Label>Profile Image URL</Label>
+                         <Input value={member.image} onChange={e => {
+                          const list = [...faculty]; list[idx].image = e.target.value; setFaculty(list);
+                        }} placeholder="https://..." />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                         <Label>Bio</Label>
+                         <Textarea value={member.bio} onChange={e => {
+                          const list = [...faculty]; list[idx].bio = e.target.value; setFaculty(list);
+                        }} placeholder="Short bio..." />
+                      </div>
+                    </div>
+                  </div>
                 ))}
+                <Button variant="outline" className="w-full dashed-border" onClick={() => setFaculty([...faculty, { name: "", subject: "", designation: "", experience: "", bio: "", image: "" }])}>
+                   <Plus className="mr-2 h-4 w-4" /> Add Faculty Member
+                </Button>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="images" className="space-y-4">
+        {/* 5. Content (Achievements & Testimonials) */}
+        <TabsContent value="content" className="space-y-6 mt-6">
+          
+          {/* Achievements Section */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Image className="h-5 w-5" />
-                Hero Images
-              </CardTitle>
+              <CardTitle>Achievements</CardTitle>
+              <CardDescription>Showcase your awards and milestones.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[0, 1, 2].map((idx) => (
-                  <div key={idx} className="relative">
-                    <input
-                      ref={(el) => (heroInputRefs.current[idx] = el)}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onPickHero(idx, f);
-                        e.currentTarget.value = "";
-                      }}
-                    />
+            <CardContent>
+              {achievements.map((item, idx) => (
+                <div key={idx} className="flex gap-4 mb-4 items-start border-b pb-4 last:border-0">
+                  <div className="grid gap-2 flex-1">
+                    <Label>Title</Label>
+                    <Input value={item.title} onChange={e => {
+                      const list = [...achievements]; list[idx].title = e.target.value; setAchievements(list);
+                    }} placeholder="Best Coaching 2024" />
+                    <Label className="mt-2">Description</Label>
+                    <Input value={item.description} onChange={e => {
+                      const list = [...achievements]; list[idx].description = e.target.value; setAchievements(list);
+                    }} placeholder="Awarded by..." />
+                  </div>
+                  <div className="grid gap-2 w-32">
+                    <Label>Icon</Label>
+                    <Select value={item.icon} onValueChange={(val) => {
+                       const list = [...achievements]; list[idx].icon = val; setAchievements(list);
+                    }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ICON_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => setAchievements(achievements.filter((_, i) => i !== idx))}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setAchievements([...achievements, { title: "", description: "", icon: "trophy" }])}>
+                <Plus className="mr-2 h-4 w-4" /> Add Achievement
+              </Button>
+            </CardContent>
+          </Card>
 
-                    <div
-                      onClick={() => heroInputRefs.current[idx]?.click()}
-                      className={cn(
-                        "aspect-video rounded-lg border-2 border-dashed border-border hover:border-primary transition-colors cursor-pointer flex flex-col items-center justify-center gap-2 bg-muted/30 overflow-hidden"
-                      )}
+          {/* Testimonials Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Testimonials</CardTitle>
+              <CardDescription>What students say about you.</CardDescription>
+            </CardHeader>
+            <CardContent>
+               <div className="grid gap-6">
+                {testimonials.map((item, idx) => (
+                  <div key={idx} className="p-4 border rounded-xl relative bg-muted/20">
+                     <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="absolute top-2 right-2 text-destructive"
+                      onClick={() => setTestimonials(testimonials.filter((_, i) => i !== idx))}
                     >
-                      {heroImages[idx] ? (
-                        <img
-                          src={heroImages[idx]}
-                          alt={`Hero ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <>
-                          <Upload className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            Hero Image {idx + 1}
-                          </span>
-                        </>
-                      )}
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                          <Label>Student Name</Label>
+                          <Input value={item.name} onChange={e => {
+                            const list = [...testimonials]; list[idx].name = e.target.value; setTestimonials(list);
+                          }} />
+                       </div>
+                       <div className="space-y-2">
+                          <Label>Course Taken</Label>
+                          <Input value={item.course} onChange={e => {
+                            const list = [...testimonials]; list[idx].course = e.target.value; setTestimonials(list);
+                          }} />
+                       </div>
+                       <div className="space-y-2 md:col-span-2">
+                          <Label>Review Text</Label>
+                          <Textarea value={item.text} onChange={e => {
+                            const list = [...testimonials]; list[idx].text = e.target.value; setTestimonials(list);
+                          }} />
+                       </div>
+                       <div className="space-y-2">
+                          <Label>Avatar URL</Label>
+                          <Input value={item.avatar} onChange={e => {
+                            const list = [...testimonials]; list[idx].avatar = e.target.value; setTestimonials(list);
+                          }} placeholder="https://..." />
+                       </div>
+                       <div className="space-y-2">
+                          <Label>Rating (1-5)</Label>
+                          <Input type="number" max={5} min={1} value={item.rating} onChange={e => {
+                            const list = [...testimonials]; list[idx].rating = Number(e.target.value); setTestimonials(list);
+                          }} />
+                       </div>
                     </div>
                   </div>
                 ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Recommended size: 1920x1080px. Maximum file size: 5MB.
-              </p>
+                <Button variant="outline" className="w-full dashed-border" onClick={() => setTestimonials([...testimonials, { name: "", course: "", text: "", rating: 5, avatar: "" }])}>
+                   <Plus className="mr-2 h-4 w-4" /> Add Testimonial
+                </Button>
+               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Website Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
-                <div className="gradient-bg p-8">
-                  <div className="max-w-lg">
-                    <Badge className="bg-white/20 text-white mb-4">
-                      #{tenantSlug ? "Your Coaching" : "1"} on UNIV.LIVE
-                    </Badge>
-                    <h2 className="text-2xl font-bold text-white mb-2">
-                      {coachingName || "Your Coaching Name"}
-                    </h2>
-                    <p className="text-white/80 text-sm mb-4">
-                      {tagline || "Your tagline will appear here"}
-                    </p>
-                    <Button className="bg-white text-foreground hover:bg-white/90">
-                      Enroll Now
-                    </Button>
-                  </div>
-                </div>
-                <div className="p-4 text-center text-sm text-muted-foreground">
-                  Live preview of your website hero section
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </div>
   );
 }
-
