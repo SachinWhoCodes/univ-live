@@ -1,22 +1,22 @@
-// src/AppRoutes.tsx
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useTenant } from "@/contexts/TenantProvider";
-import TenantHome from "@/themes/coaching/theme1/TenantHome";
-import TenantCourses from "@/themes/coaching/theme1/TenantCourses";
 
-import Index from "@/pages/Index";
-import HowItWorks from "@/pages/HowItWorks";
-import ForCoaching from "@/pages/ForCoaching";
-import ForStudents from "@/pages/ForStudents";
-import OurCourses from "@/pages/OurCourses";
-import Pricing from "@/pages/Pricing";
-import About from "@/pages/About";
-import Contact from "@/pages/Contact";
+// Route Guards
+import RequireRole from "@/components/auth/RequireRole";
+import StudentRoute from "@/components/routes/StudentRoute"; // <--- IMPORT THIS
+
+// Tenant / Public Pages
+import TenantHome from "@/pages/tenant/TenantHome"; 
+import TenantCourses from "@/pages/tenant/TenantCourses";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "@/pages/NotFound";
-import RequireRole from "@/components/auth/RequireRole";
+
+// Platform Pages (Univ.Live main site)
+import Index from "@/pages/Index";
+import HowItWorks from "@/pages/HowItWorks";
+import Pricing from "@/pages/Pricing";
 
 // Educator Dashboard
 import EducatorLayout from "@/components/educator/EducatorLayout";
@@ -49,64 +49,72 @@ export default function AppRoutes() {
 
   return (
     <Routes>
-      {/* TENANT DOMAIN */}
+      {/* =========================================================
+          SCENARIO A: TENANT WEBSITE (e.g. coaching.univ.live)
+         ========================================================= */}
       {isTenantDomain ? (
         <>
+          {/* --- Public Routes (Open to everyone) --- */}
           <Route path="/" element={<TenantHome />} />
           <Route path="/courses" element={<TenantCourses />} />
-          <Route path="*" element={<NotFound />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
 
-          {/* Student */}
-          <Route
-            path="/student"
-            element={
-              <RequireRole allow={["STUDENT", "ADMIN"]} redirectTo="/login?role=student">
-                <StudentLayout />
-              </RequireRole>
-            }
-          >
-            <Route index element={<StudentDashboard />} />
-            <Route path="dashboard" element={<StudentDashboard />} />
-            <Route path="tests" element={<StudentTests />} />
-            <Route path="tests/:testId" element={<StudentTestDetails />} />
-            <Route path="tests/:testId/attempt" element={<StudentCBTAttempt />} />
-            <Route path="attempts" element={<StudentAttempts />} />
-            <Route path="attempts/:attemptId" element={<StudentAttemptDetails />} />
-            <Route path="results/:attemptId" element={<StudentResults />} />
-            <Route path="rankings" element={<StudentRankings />} />
-            <Route path="analytics" element={<StudentAnalytics />} />
-            <Route path="messages" element={<StudentMessages />} />
-            <Route path="settings" element={<StudentSettings />} />
+          {/* --- PROTECTED STUDENT ROUTES --- */}
+          {/* We replace 'RequireRole' with 'StudentRoute' here */}
+          <Route path="/student" element={<StudentRoute />}>
+            <Route element={<StudentLayout />}>
+              <Route index element={<StudentDashboard />} />
+              <Route path="dashboard" element={<StudentDashboard />} />
+              <Route path="tests" element={<StudentTests />} />
+              <Route path="tests/:testId" element={<StudentTestDetails />} />
+              <Route path="tests/:testId/attempt" element={<StudentCBTAttempt />} />
+              <Route path="attempts" element={<StudentAttempts />} />
+              <Route path="attempts/:attemptId" element={<StudentAttemptDetails />} />
+              <Route path="results/:attemptId" element={<StudentResults />} />
+              <Route path="rankings" element={<StudentRankings />} />
+              <Route path="analytics" element={<StudentAnalytics />} />
+              <Route path="messages" element={<StudentMessages />} />
+              <Route path="settings" element={<StudentSettings />} />
+            </Route>
           </Route>
 
-        </>
-      ) : (
-        <>
-          {/* MAIN DOMAIN */}
-          <Route path="/" element={<Index />} />
-          <Route path="/how-it-works" element={<HowItWorks />} />
-          <Route path="/for-coaching" element={<ForCoaching />} />
-          <Route path="/for-students" element={<ForStudents />} />
-          <Route path="/our-courses" element={<OurCourses />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-
-          {/* Educator */}
+          {/* --- PROTECTED EDUCATOR ROUTES (Tenant Admin) --- */}
           <Route
-            path="/educator"
+            path="/dashboard"
             element={
-              <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login?role=educator">
+              <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login">
                 <EducatorLayout />
               </RequireRole>
             }
           >
             <Route index element={<EducatorDashboard />} />
-            <Route path="dashboard" element={<EducatorDashboard />} />
+            {/* Add other educator routes if they manage from subdomain */}
+          </Route>
+
+          <Route path="*" element={<NotFound />} />
+        </>
+      ) : (
+        /* =========================================================
+           SCENARIO B: MAIN PLATFORM (univ.live)
+           ========================================================= */
+        <>
+          <Route path="/" element={<Index />} />
+          <Route path="/how-it-works" element={<HowItWorks />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+
+          {/* Main Platform Educator Dashboard */}
+          <Route
+            path="/dashboard"
+            element={
+              <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login">
+                <EducatorLayout />
+              </RequireRole>
+            }
+          >
+            <Route index element={<EducatorDashboard />} />
             <Route path="learners" element={<Learners />} />
             <Route path="test-series" element={<TestSeries />} />
             <Route path="access-codes" element={<AccessCodes />} />
@@ -117,33 +125,9 @@ export default function AppRoutes() {
             <Route path="settings" element={<Settings />} />
           </Route>
 
-          {/* Student */}
-          <Route
-            path="/student"
-            element={
-              <RequireRole allow={["STUDENT", "ADMIN"]} redirectTo="/login?role=student">
-                <StudentLayout />
-              </RequireRole>
-            }
-          >
-            <Route index element={<StudentDashboard />} />
-            <Route path="dashboard" element={<StudentDashboard />} />
-            <Route path="tests" element={<StudentTests />} />
-            <Route path="tests/:testId" element={<StudentTestDetails />} />
-            <Route path="tests/:testId/attempt" element={<StudentCBTAttempt />} />
-            <Route path="attempts" element={<StudentAttempts />} />
-            <Route path="attempts/:attemptId" element={<StudentAttemptDetails />} />
-            <Route path="results/:attemptId" element={<StudentResults />} />
-            <Route path="rankings" element={<StudentRankings />} />
-            <Route path="analytics" element={<StudentAnalytics />} />
-            <Route path="messages" element={<StudentMessages />} />
-            <Route path="settings" element={<StudentSettings />} />
-          </Route>
-
           <Route path="*" element={<NotFound />} />
         </>
       )}
     </Routes>
   );
 }
-

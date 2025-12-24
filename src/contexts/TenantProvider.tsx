@@ -1,7 +1,6 @@
-// src/contexts/TenantProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getTenantSlugFromHostname } from "@/lib/tenant";
-import { db } from "@/lib/firebase"; // Removed 'auth' and 'signOut'
+import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthProvider";
 
@@ -10,6 +9,8 @@ export type TenantProfile = {
   tenantSlug: string;
   coachingName?: string;
   tagline?: string;
+  contact?: { phone?: string; email?: string; address?: string };
+  socials?: Record<string, string | null>;
   websiteConfig?: any;
 };
 
@@ -23,20 +24,23 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth();
+  // AuthProvider is just used to ensure auth is ready, but we don't use profile here anymore for security
+  const { } = useAuth(); 
+  
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const tenantSlug = getTenantSlugFromHostname();
   const isTenantDomain = !!tenantSlug;
 
-  // 1. Data Loading (KEEP THIS)
+  // 1. Load Tenant Data
   useEffect(() => {
     let mounted = true;
     async function loadTenant() {
       setLoading(true);
       setTenant(null);
       
+      // If we are on main domain, nothing to load
       if (!tenantSlug) {
         setLoading(false);
         return;
@@ -53,6 +57,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
             tenantSlug: d.slug, 
             coachingName: d.coachingName,
             tagline: d.tagline,
+            contact: d.contact,
+            socials: d.socials,
             websiteConfig: d.websiteConfig,
           });
         }
@@ -67,8 +73,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, [tenantSlug]);
 
-  // ❌ THE SECURITY USEEFFECT IS GONE FROM HERE.
-  // It is now handled by StudentRoute.tsx only.
+  // ❌ IMPORTANT: No security useEffect here. It is gone.
 
   const value: TenantContextValue = {
     tenant,

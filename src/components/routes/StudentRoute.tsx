@@ -9,7 +9,7 @@ export default function StudentRoute() {
   const { profile, loading: authLoading } = useAuth();
   const { tenantSlug, isTenantDomain, loading: tenantLoading } = useTenant();
 
-  // 1. Wait for Auth & Tenant to load
+  // 1. Wait for everything to load
   if (authLoading || tenantLoading) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -18,39 +18,36 @@ export default function StudentRoute() {
     );
   }
 
-  // 2. Not Logged In? -> Redirect to Login
+  // 2. Not Logged In? -> Login Page
   if (!profile) {
     return <Navigate to="/login?role=student" replace />;
   }
 
-  // 3. Not a Student? -> Redirect appropriately
+  // 3. Not a Student? -> Dashboard (or home)
   if (profile.role !== "STUDENT") {
-    // If they are an educator trying to access student pages, send them to dashboard
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 4. THE CRITICAL CHECK: Are they enrolled in THIS website?
+  // 4. Security Check: Are they enrolled in THIS tenant?
   if (isTenantDomain) {
     const enrolledList = profile.enrolledTenants || [];
     
-    // Check if current site is in their enrolled list OR matches legacy slug
+    // Check match
     const isEnrolled = enrolledList.includes(tenantSlug!) || profile.tenantSlug === tenantSlug;
 
     if (!isEnrolled) {
-      // If not enrolled, kick them out of the PROTECTED route only.
-      // Redirect them to the Home Page of this site (which is public).
+      // If not enrolled, kick them out to the HOME page of this tenant
       return <RedirectToHomeWithError />;
     }
   }
 
-  // 5. All checks passed? Render the requested page.
+  // 5. Allowed
   return <Outlet />;
 }
 
-// Helper component to show toast and redirect safely
+// Small helper to show the error message after redirect
 function RedirectToHomeWithError() {
   useEffect(() => {
-    // Using setTimeout to ensure toast renders after navigation
     setTimeout(() => {
         toast.error("You are not enrolled in this coaching. Please Register first.");
     }, 100);
