@@ -22,7 +22,7 @@ function slugify(text: string) {
 export default function Signup() {
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role");
-  const [role, setRole] = useState<"educator" | "student">(roleParam === "student" ? "student" : "educator");
+  const [role, setRole] = useState<"educator" | "student">(roleParam === "educator" ? "educator" : "student");
 
   const navigate = useNavigate();
   const { tenant, tenantSlug, isTenantDomain } = useTenant();
@@ -30,6 +30,8 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
+
+
 
   // Form States
   const [fullName, setFullName] = useState("");
