@@ -2,8 +2,8 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { useTenant } from "@/contexts/TenantProvider";
-import TenantHome from "@/pages/tenant/TenantHome";
-import TenantCourses from "@/pages/tenant/TenantCourses";
+import TenantHome from "@/themes/coaching/theme1/TenantHome";
+import TenantCourses from "@/themes/coaching/theme1/TenantCourses";
 
 import Index from "@/pages/Index";
 import HowItWorks from "@/pages/HowItWorks";
