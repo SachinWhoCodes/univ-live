@@ -1,6 +1,6 @@
 // src/pages/Signup.tsx
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ export default function Signup() {
   const [role, setRole] = useState<"educator" | "student">(roleParam === "student" ? "student" : "educator");
 
   const navigate = useNavigate();
-  const { tenantSlug } = useTenant();
+  const { tenantSlug, isTenantDomain } = useTenant();
 
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -56,6 +56,13 @@ export default function Signup() {
       ? "AI-powered websites and management tools for modern coaching institutes."
       : "Access thousands of practice tests and track your progress with AI analytics.";
   }, [role]);
+
+
+  useEffect(() => {
+    if (!roleParam) {
+      setRole(isTenantDomain ? "student" : "educator");
+    }
+  }, [isTenantDomain, roleParam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,7 +199,8 @@ export default function Signup() {
           </p>
 
           {/* Role Selector */}
-          <div className="flex gap-4 mb-8">
+          {/* <div className="flex gap-4 mb-8">
+            
             <button
               onClick={() => setRole("educator")}
               className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
@@ -221,7 +229,7 @@ export default function Signup() {
                 Student
               </span>
             </button>
-          </div>
+          </div> */}
 
           {/* Registration Form */}
           <form onSubmit={handleSubmit} className="space-y-5">

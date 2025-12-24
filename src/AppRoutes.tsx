@@ -57,6 +57,30 @@ export default function AppRoutes() {
           <Route path="*" element={<NotFound />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+
+          {/* Student */}
+          <Route
+            path="/student"
+            element={
+              <RequireRole allow={["STUDENT", "ADMIN"]} redirectTo="/login?role=student">
+                <StudentLayout />
+              </RequireRole>
+            }
+          >
+            <Route index element={<StudentDashboard />} />
+            <Route path="dashboard" element={<StudentDashboard />} />
+            <Route path="tests" element={<StudentTests />} />
+            <Route path="tests/:testId" element={<StudentTestDetails />} />
+            <Route path="tests/:testId/attempt" element={<StudentCBTAttempt />} />
+            <Route path="attempts" element={<StudentAttempts />} />
+            <Route path="attempts/:attemptId" element={<StudentAttemptDetails />} />
+            <Route path="results/:attemptId" element={<StudentResults />} />
+            <Route path="rankings" element={<StudentRankings />} />
+            <Route path="analytics" element={<StudentAnalytics />} />
+            <Route path="messages" element={<StudentMessages />} />
+            <Route path="settings" element={<StudentSettings />} />
+          </Route>
+
         </>
       ) : (
         <>
