@@ -1,9 +1,17 @@
-import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Trophy, Award, Target, Users, Crown, GraduationCap, Video, FileText } from "lucide-react";
+import {
+  Trophy,
+  Award,
+  Target,
+  Users,
+  Crown,
+  GraduationCap,
+  Video,
+  FileText,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getTenantProfile } from "@/mock/tenantWebsiteMock";
+import { useTenant } from "@/contexts/TenantProvider";
 
 const iconMap: Record<string, React.ElementType> = {
   trophy: Trophy,
@@ -24,10 +32,13 @@ const colors = [
 ];
 
 export default function Theme1Achievements() {
-  const { tenantSlug } = useParams();
-  const tenant = getTenantProfile(tenantSlug || "");
+  const { tenant } = useTenant();
 
   if (!tenant) return null;
+
+  const achievements = tenant.websiteConfig?.achievements || [];
+
+  if (!achievements.length) return null;
 
   return (
     <section className="py-20">
@@ -45,14 +56,17 @@ export default function Theme1Achievements() {
               Our Achievements & Excellence
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Years of dedication and expertise in CUET preparation have led to exceptional results
+              Years of dedication and expertise in CUET preparation have led to
+              exceptional results
             </p>
           </motion.div>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {tenant.achievements.map((achievement, index) => {
-            const Icon = iconMap[achievement.icon] || Trophy;
+          {achievements.map((achievement: any, index: number) => {
+            const Icon =
+              iconMap[achievement.icon as string] || Trophy;
+
             return (
               <motion.div
                 key={index}
@@ -63,11 +77,20 @@ export default function Theme1Achievements() {
               >
                 <Card className="card-soft border-0 text-center h-full hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
                   <CardContent className="p-6">
-                    <div className={`h-16 w-16 rounded-2xl ${colors[index % colors.length]} flex items-center justify-center mx-auto mb-4`}>
+                    <div
+                      className={`h-16 w-16 rounded-2xl ${
+                        colors[index % colors.length]
+                      } flex items-center justify-center mx-auto mb-4`}
+                    >
                       <Icon className="h-8 w-8" />
                     </div>
-                    <h3 className="font-semibold text-lg mb-2">{achievement.title}</h3>
-                    <p className="text-sm text-muted-foreground">{achievement.description}</p>
+
+                    <h3 className="font-semibold text-lg mb-2">
+                      {achievement.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {achievement.description}
+                    </p>
                   </CardContent>
                 </Card>
               </motion.div>

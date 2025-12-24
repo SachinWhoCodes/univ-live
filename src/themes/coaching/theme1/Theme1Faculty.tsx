@@ -1,16 +1,18 @@
-import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { GraduationCap, Award, Linkedin } from "lucide-react";
+import { GraduationCap, Award } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getTenantProfile } from "@/mock/tenantWebsiteMock";
+import { useTenant } from "@/contexts/TenantProvider";
 
 export default function Theme1Faculty() {
-  const { tenantSlug } = useParams();
-  const tenant = getTenantProfile(tenantSlug || "");
+  const { tenant } = useTenant();
 
   if (!tenant) return null;
+
+  const faculty = tenant.websiteConfig?.faculty || [];
+
+  if (!faculty.length) return null;
 
   return (
     <section className="py-20 bg-pastel-lavender/20 dark:bg-muted/10">
@@ -34,9 +36,9 @@ export default function Theme1Faculty() {
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {tenant.faculty.map((member, index) => (
+          {faculty.map((member: any, index: number) => (
             <motion.div
-              key={member.id}
+              key={member.id || index}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -48,17 +50,27 @@ export default function Theme1Faculty() {
                     <Avatar className="h-20 w-20 shrink-0">
                       <AvatarImage src={member.image} />
                       <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-xl font-bold">
-                        {member.name.split(" ").map(n => n[0]).join("")}
+                        {member.name
+                          ?.split(" ")
+                          .map((n: string) => n[0])
+                          .join("")}
                       </AvatarFallback>
                     </Avatar>
+
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{member.name}</h3>
-                      <p className="text-sm text-primary font-medium">{member.designation}</p>
+                      <h3 className="font-semibold text-lg">
+                        {member.name}
+                      </h3>
+                      <p className="text-sm text-primary font-medium">
+                        {member.designation}
+                      </p>
+
                       <div className="flex items-center gap-2 mt-2">
                         <Badge variant="secondary" className="rounded-full text-xs">
                           <GraduationCap className="h-3 w-3 mr-1" />
                           {member.subject}
                         </Badge>
+
                         <Badge variant="outline" className="rounded-full text-xs">
                           <Award className="h-3 w-3 mr-1" />
                           {member.experience}
@@ -66,6 +78,7 @@ export default function Theme1Faculty() {
                       </div>
                     </div>
                   </div>
+
                   <p className="text-sm text-muted-foreground mt-4">
                     {member.bio}
                   </p>

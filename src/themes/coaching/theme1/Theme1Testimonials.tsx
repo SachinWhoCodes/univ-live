@@ -1,16 +1,18 @@
-import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Star, Quote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getTenantProfile } from "@/mock/tenantWebsiteMock";
+import { useTenant } from "@/contexts/TenantProvider";
 
 export default function Theme1Testimonials() {
-  const { tenantSlug } = useParams();
-  const tenant = getTenantProfile(tenantSlug || "");
+  const { tenant } = useTenant();
 
   if (!tenant) return null;
+
+  const testimonials = tenant.websiteConfig?.testimonials || [];
+
+  if (!testimonials.length) return null;
 
   return (
     <section className="py-20 bg-pastel-mint/20 dark:bg-muted/10">
@@ -34,9 +36,9 @@ export default function Theme1Testimonials() {
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
-          {tenant.testimonials.map((testimonial, index) => (
+          {testimonials.map((testimonial: any, index: number) => (
             <motion.div
-              key={testimonial.id}
+              key={testimonial.id || index}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -45,26 +47,39 @@ export default function Theme1Testimonials() {
               <Card className="card-soft border-0 h-full">
                 <CardContent className="p-6 flex flex-col h-full">
                   <Quote className="h-8 w-8 text-primary/30 mb-4" />
+
                   <p className="text-muted-foreground flex-1 mb-6">
-                    "{testimonial.text}"
+                    “{testimonial.text}”
                   </p>
+
                   <div className="flex items-center gap-3">
                     <Avatar className="h-12 w-12">
                       <AvatarImage src={testimonial.avatar} />
                       <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                        {testimonial.name.split(" ").map(n => n[0]).join("")}
+                        {testimonial.name
+                          ?.split(" ")
+                          .map((n: string) => n[0])
+                          .join("")}
                       </AvatarFallback>
                     </Avatar>
+
                     <div>
                       <p className="font-semibold">{testimonial.name}</p>
-                      <p className="text-sm text-muted-foreground">{testimonial.course}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {testimonial.course}
+                      </p>
                     </div>
                   </div>
+
                   <div className="flex gap-1 mt-4">
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
-                        className={`h-4 w-4 ${i < testimonial.rating ? "fill-yellow-400 text-yellow-400" : "text-muted"}`}
+                        className={`h-4 w-4 ${
+                          i < testimonial.rating
+                            ? "fill-yellow-400 text-yellow-400"
+                            : "text-muted"
+                        }`}
                       />
                     ))}
                   </div>

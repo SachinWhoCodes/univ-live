@@ -1,14 +1,20 @@
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Clock, BookOpen, Users, Star, BadgeCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Clock,
+  BookOpen,
+  Users,
+  Star,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getCoursesByTenant, Course } from "@/mock/tenantWebsiteMock";
+import { useTenant } from "@/contexts/TenantProvider";
 
 const badgeColors: Record<string, string> = {
   "Most Popular": "bg-gradient-to-r from-primary to-accent text-white",
-  "New": "bg-green-500 text-white",
+  New: "bg-green-500 text-white",
   "Best Value": "bg-yellow-500 text-white",
 };
 
@@ -16,19 +22,23 @@ const subjectColors: Record<string, string> = {
   "All Subjects": "bg-pastel-lavender",
   "English & GT": "bg-pastel-mint",
   "Business Studies": "bg-pastel-yellow",
-  "Economics": "bg-pastel-peach",
-  "Mathematics": "bg-pastel-pink",
+  Economics: "bg-pastel-peach",
+  Mathematics: "bg-pastel-pink",
 };
 
 export default function Theme1CoursesPreview() {
-  const { tenantSlug } = useParams();
-  const courses = getCoursesByTenant(tenantSlug || "").slice(0, 4);
+  const { tenant } = useTenant();
 
-  if (courses.length === 0) return null;
+  if (!tenant) return null;
+
+  const courses = tenant.websiteConfig?.courses?.slice(0, 4) || [];
+
+  if (!courses.length) return null;
 
   return (
     <section className="py-20 bg-pastel-cream/30 dark:bg-muted/10">
       <div className="container mx-auto px-4">
+        {/* Header */}
         <div className="text-center mb-12">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -47,15 +57,17 @@ export default function Theme1CoursesPreview() {
           </motion.div>
         </div>
 
+        {/* Course Cards */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {courses.map((course, index) => (
-            <CourseCard key={course.id} course={course} index={index} tenantSlug={tenantSlug || ""} />
+          {courses.map((course: any, index: number) => (
+            <CourseCard key={course.id || index} course={course} index={index} />
           ))}
         </div>
 
+        {/* View All */}
         <div className="text-center mt-12">
           <Button size="lg" className="gradient-bg rounded-full" asChild>
-            <Link to={`/t/${tenantSlug}/courses`}>
+            <Link to="/courses">
               View All Courses
               <ArrowRight className="ml-2 h-5 w-5" />
             </Link>
@@ -66,8 +78,15 @@ export default function Theme1CoursesPreview() {
   );
 }
 
-function CourseCard({ course, index, tenantSlug }: { course: Course; index: number; tenantSlug: string }) {
-  const bgColor = subjectColors[course.subject] || "bg-pastel-mint";
+function CourseCard({
+  course,
+  index,
+}: {
+  course: any;
+  index: number;
+}) {
+  const bgColor =
+    subjectColors[course.subject] || "bg-pastel-mint";
 
   return (
     <motion.div
@@ -76,21 +95,31 @@ function CourseCard({ course, index, tenantSlug }: { course: Course; index: numb
       viewport={{ once: true }}
       transition={{ delay: index * 0.1 }}
     >
-      <Link to={`/t/${tenantSlug}/courses/${course.slug}`}>
-        <Card className={`card-soft border-0 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${bgColor} dark:bg-card`}>
+      <Link to={`/courses/${course.slug}`}>
+        <Card
+          className={`card-soft border-0 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${bgColor} dark:bg-card`}
+        >
           <CardContent className="p-0">
             {/* Header */}
             <div className="p-4 relative">
               {course.badge && (
-                <Badge className={`absolute top-2 right-2 ${badgeColors[course.badge]}`}>
+                <Badge
+                  className={`absolute top-2 right-2 ${badgeColors[course.badge]}`}
+                >
                   {course.badge}
                 </Badge>
               )}
+
               <div className="h-12 w-12 rounded-xl bg-white/80 dark:bg-background/80 flex items-center justify-center mb-3">
                 <BookOpen className="h-6 w-6 text-primary" />
               </div>
-              <h3 className="font-semibold text-lg line-clamp-2 mb-2">{course.title}</h3>
-              <p className="text-sm text-muted-foreground line-clamp-2">{course.description}</p>
+
+              <h3 className="font-semibold text-lg line-clamp-2 mb-2">
+                {course.title}
+              </h3>
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                {course.description}
+              </p>
             </div>
 
             {/* Footer */}
@@ -109,19 +138,28 @@ function CourseCard({ course, index, tenantSlug }: { course: Course; index: numb
               <div className="flex items-center justify-between">
                 <div>
                   {course.price === 0 ? (
-                    <span className="text-lg font-bold text-green-600">Free</span>
+                    <span className="text-lg font-bold text-green-600">
+                      Free
+                    </span>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold">₹{(course.discountPrice || course.price).toLocaleString()}</span>
+                      <span className="text-lg font-bold">
+                        ₹{(course.discountPrice || course.price).toLocaleString()}
+                      </span>
                       {course.discountPrice && (
-                        <span className="text-sm text-muted-foreground line-through">₹{course.price.toLocaleString()}</span>
+                        <span className="text-sm text-muted-foreground line-through">
+                          ₹{course.price.toLocaleString()}
+                        </span>
                       )}
                     </div>
                   )}
                 </div>
+
                 <div className="flex items-center gap-1 text-sm">
                   <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">4.8</span>
+                  <span className="font-medium">
+                    {course.rating || "4.8"}
+                  </span>
                 </div>
               </div>
             </div>

@@ -19,10 +19,30 @@ import Theme1Testimonials from "@/themes/coaching/theme1/Theme1Testimonials";
 import Theme1CTA from "@/themes/coaching/theme1/Theme1CTA";
 
 const Index = () => {
-  const { isTenantDomain } = useTenant();
+  const { isTenantDomain, loading, tenant } = useTenant();
 
-  // 🔵 TENANT HOMEPAGE (acadable-shivpuri.univ.live)
-  if (isTenantDomain) {
+  // ⏳ Wait for tenant to load
+  if (isTenantDomain && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
+
+  // ❌ Invalid tenant slug
+  if (isTenantDomain && !tenant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <h1 className="text-xl font-semibold">
+          Coaching website not found
+        </h1>
+      </div>
+    );
+  }
+
+  // 🟦 TENANT WEBSITE
+  if (isTenantDomain && tenant) {
     return (
       <Theme1Layout>
         <Theme1Hero />
