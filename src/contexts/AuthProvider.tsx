@@ -10,8 +10,9 @@ export type UserRole = "ADMIN" | "EDUCATOR" | "STUDENT";
 export type AppUserProfile = {
   uid: string;
   role: UserRole;
-  educatorId?: string;   // for STUDENT + EDUCATOR (tenant binding)
-  tenantSlug?: string;   // for EDUCATOR (future subdomain)
+  educatorId?: string;   
+  tenantSlug?: string;   // For Educators (they usually own just one)
+  enrolledTenants?: string[]; // ✅ NEW: For Students (list of joined coachings)
   displayName?: string;
   email?: string;
 };
@@ -24,6 +25,7 @@ type AuthContextValue = {
   role: UserRole | null;
   educatorId: string | null;
   tenantSlug: string | null;
+  enrolledTenants: string[]; // ✅ Expose this
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -43,6 +45,10 @@ async function fetchProfile(uid: string): Promise<AppUserProfile | null> {
     role,
     educatorId: typeof data.educatorId === "string" ? data.educatorId : undefined,
     tenantSlug: typeof data.tenantSlug === "string" ? data.tenantSlug : undefined,
+    // ✅ Handle legacy data (string) vs new data (array)
+    enrolledTenants: Array.isArray(data.enrolledTenants) 
+      ? data.enrolledTenants 
+      : (data.tenantSlug ? [data.tenantSlug] : []), 
     displayName: typeof data.displayName === "string" ? data.displayName : undefined,
     email: typeof data.email === "string" ? data.email : undefined,
   };
@@ -86,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: profile?.role ?? null,
       educatorId: profile?.educatorId ?? null,
       tenantSlug: profile?.tenantSlug ?? null,
+      enrolledTenants: profile?.enrolledTenants ?? [],
     };
   }, [firebaseUser, profile, loading]);
 
@@ -99,4 +106,3 @@ export function useAuth() {
   }
   return ctx;
 }
-

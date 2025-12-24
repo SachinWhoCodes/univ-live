@@ -1,29 +1,32 @@
-// src/pages/Signup.tsx
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Upload } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-
-import { signUpEducator, signUpStudent } from "@/services/authService";
 import { useTenant } from "@/contexts/TenantProvider";
 
-function slugify(raw: string) {
-  return String(raw || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9- ]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
+// Firebase imports
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  updateProfile 
+} from "firebase/auth";
+import { 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  arrayUnion, 
+  getDoc 
+} from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
-function randomSuffix() {
-  return Math.floor(1000 + Math.random() * 9000).toString(); // 4 digits
+// Helper to make URL-friendly slugs
+function slugify(text: string) {
+  return text.toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '').replace(/\-\-+/g, '-');
 }
 
 export default function Signup() {
@@ -32,417 +35,278 @@ export default function Signup() {
   const [role, setRole] = useState<"educator" | "student">(roleParam === "student" ? "student" : "educator");
 
   const navigate = useNavigate();
-  const { tenantSlug, isTenantDomain } = useTenant();
+  const { tenant, tenantSlug, isTenantDomain } = useTenant();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
-  // form state
-  const [name, setName] = useState("");
+  // Form States
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [coachingName, setCoachingName] = useState("");
-  const [city, setCity] = useState("");
-  const [coachingCode, setCoachingCode] = useState(""); // fallback if no subdomain
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-
-  const heroTitle = useMemo(() => {
-    return role === "educator" ? "Launch Your Website in 6 Hours" : "Start Your Exam Prep Today";
-  }, [role]);
-
-  const heroDesc = useMemo(() => {
-    return role === "educator"
-      ? "AI-powered websites and management tools for modern coaching institutes."
-      : "Access thousands of practice tests and track your progress with AI analytics.";
-  }, [role]);
-
-
-  useEffect(() => {
-    if (!roleParam) {
-      setRole(isTenantDomain ? "student" : "educator");
-    }
-  }, [isTenantDomain, roleParam]);
+  const [coachingName, setCoachingName] = useState("");
+  const [phone, setPhone] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreed) return toast.error("Please agree to the terms and conditions");
+    
+    setLoading(true);
 
-    if (!acceptedTerms) {
-      toast.error("Please accept the terms and conditions");
-      return;
-    }
-
-    if (!name.trim() || !email.trim() || !password) {
-      toast.error("Please fill all required fields.");
-      return;
-    }
-
-    setIsLoading(true);
     try {
-      if (role === "educator") {
-        if (!coachingName.trim() || !city.trim()) {
-          toast.error("Please enter Coaching Name and City.");
-          setIsLoading(false);
-          return;
+      if (role === "student") {
+        // --- STUDENT SIGNUP LOGIC ---
+        if (!isTenantDomain || !tenant) {
+          throw new Error("Students must sign up on a specific coaching website link.");
         }
 
-        // auto tenantSlug derived from coachingName (+ city for uniqueness)
-        const base = slugify(`${coachingName}-${city}`) || slugify(coachingName) || "coaching";
-        let tenant = base;
+        try {
+            // 1. Try to create a NEW user
+            const userCred = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCred.user;
+            
+            await updateProfile(user, { displayName: fullName });
 
-        // Try signup; if slug taken, retry with suffix automatically
-        let lastErr: any = null;
-        for (let i = 0; i < 5; i++) {
-          try {
-            await signUpEducator({
-              name: name.trim(),
-              email: email.trim(),
-              password,
-              coachingName: coachingName.trim(),
-              tenantSlug: tenant,
+            // Create new Student Doc with ARRAY of tenants
+            await setDoc(doc(db, "users", user.uid), {
+                email,
+                displayName: fullName,
+                role: "STUDENT",
+                enrolledTenants: [tenantSlug], // ✅ Initialize array
+                createdAt: new Date().toISOString()
             });
-            lastErr = null;
-            break;
-          } catch (err: any) {
-            lastErr = err;
-            const msg = String(err?.message || "");
-            if (msg.toLowerCase().includes("slug is already taken")) {
-              tenant = `${base}-${randomSuffix()}`;
-              continue;
+
+            toast.success("Account created! Welcome.");
+            navigate("/"); 
+
+        } catch (error: any) {
+            // 2. HANDLE EXISTING USER (The Magic Logic)
+            if (error.code === 'auth/email-already-in-use') {
+                
+                // Try to login with the password they just entered
+                try {
+                    const userCred = await signInWithEmailAndPassword(auth, email, password);
+                    const user = userCred.user;
+
+                    // Check if they are actually a student
+                    const userDocRef = doc(db, "users", user.uid);
+                    const userDoc = await getDoc(userDocRef);
+
+                    if (userDoc.exists() && userDoc.data().role === "STUDENT") {
+                        // ✅ User exists and password matched. Add this tenant to their list.
+                        await updateDoc(userDocRef, {
+                            enrolledTenants: arrayUnion(tenantSlug) // ✅ Add current coaching to list
+                        });
+                        
+                        toast.success("Account already exists. You have been enrolled in this coaching!");
+                        navigate("/");
+                    } else {
+                        throw new Error("This email is registered as an Educator. Cannot join as Student.");
+                    }
+
+                } catch (loginError: any) {
+                    if (loginError.code === 'auth/wrong-password') {
+                        throw new Error("Account exists, but password was incorrect. Please Login instead.");
+                    }
+                    throw loginError; // Rethrow other errors
+                }
+            } else {
+                throw error; // Rethrow real errors
             }
-            throw err;
-          }
         }
+        
+      } else {
+        // --- EDUCATOR SIGNUP LOGIC (Standard) ---
+        if (!coachingName) throw new Error("Coaching Name is required");
 
-        if (lastErr) throw lastErr;
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCred.user;
+        const generatedSlug = slugify(coachingName) + "-" + Math.floor(1000 + Math.random() * 9000);
 
-        toast.success("Account created! Redirecting to dashboard...");
-        navigate("/educator/dashboard", { replace: true });
-        return;
+        await updateProfile(user, { displayName: fullName });
+
+        // Create Educator Doc
+        await setDoc(doc(db, "users", user.uid), {
+            email,
+            displayName: fullName,
+            role: "EDUCATOR",
+            phone,
+            tenantSlug: generatedSlug, // Educators have one main slug
+            coachingName,
+            createdAt: new Date().toISOString()
+        });
+
+        // Create the Educator Record
+        await setDoc(doc(db, "educators", user.uid), {
+            email,
+            coachingName,
+            slug: generatedSlug,
+            websiteConfig: {
+                // Default config...
+            }
+        });
+        
+        toast.success("Academy created! Redirecting...");
+        window.location.href = `http://${generatedSlug}.localhost:5173/dashboard`; 
       }
 
-      // Student
-      // If on a tenant subdomain, use that tenantSlug; otherwise require coachingCode.
-      const effectiveTenant = tenantSlug || coachingCode.trim();
-      if (!effectiveTenant) {
-        toast.error("Please enter Coaching Access Code to join your coaching (or sign up from coaching subdomain).");
-        setIsLoading(false);
-        return;
-      }
-
-      await signUpStudent({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        tenantSlug: effectiveTenant,
-      });
-
-      toast.success("Account created! Redirecting...");
-      navigate("/student/dashboard", { replace: true });
-    } catch (err: any) {
-      const msg =
-        typeof err?.message === "string"
-          ? err.message.replace("Firebase: ", "")
-          : "Signup failed. Please try again.";
-      toast.error(msg);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to create account");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    // ... the same UI markup you already have (unchanged) ...
-    // For brevity here the UI remains identical; paste your existing Signup JSX after this change.
-    // (Make sure to keep all inputs wired to the updated state variables above.)
-    <div className="min-h-screen bg-background flex">
-      {/* Left - Visual */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <div className="absolute inset-0 gradient-bg" />
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-            backgroundSize: "32px 32px",
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center p-12">
-          <div className="text-center text-white max-w-md">
-            <h2 className="text-4xl font-display font-bold mb-6">{heroTitle}</h2>
-            <p className="text-lg text-white/80">{heroDesc}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Right - Form */}
-      {/* Right - Form (copy your existing JSX bindings here) */}
-      <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md py-8"
+    // ... (Your existing JSX remains exactly the same)
+    <div className="min-h-screen grid lg:grid-cols-2">
+      {/* Left Side - Form */}
+      <div className="flex items-center justify-center p-8 bg-background">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="w-full max-w-md space-y-8"
         >
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 rounded-xl gradient-bg flex items-center justify-center">
-              <span className="text-white font-display font-bold text-lg">U</span>
+          <div className="text-center">
+            <h1 className="text-3xl font-bold tracking-tight">Create Account</h1>
+            <p className="text-muted-foreground mt-2">
+              {role === "educator" ? "Start your digital coaching journey" : "Join to start learning"}
+            </p>
+          </div>
+
+          {!isTenantDomain && (
+            <div className="bg-muted p-1 rounded-lg grid grid-cols-2">
+              <button
+                onClick={() => setRole("educator")}
+                className={`py-2 text-sm font-medium rounded-md transition-all ${
+                  role === "educator" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                As Educator
+              </button>
+              <button
+                onClick={() => setRole("student")}
+                className={`py-2 text-sm font-medium rounded-md transition-all ${
+                  role === "student" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                As Student
+              </button>
             </div>
-            <span className="font-display font-bold text-2xl">
-              <span className="gradient-text">UNIV</span>
-              <span className="text-foreground">.LIVE</span>
-            </span>
-          </Link>
+          )}
 
-          <h1 className="text-3xl font-display font-bold mb-2">Create your account</h1>
-          <p className="text-muted-foreground mb-8">
-            {role === "educator" ? "Start your 14-day free trial" : "Join your coaching and start practicing"}
-          </p>
-
-          {/* Role Selector */}
-          {/* <div className="flex gap-4 mb-8">
-            
-            <button
-              onClick={() => setRole("educator")}
-              className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                role === "educator"
-                  ? "border-brand-start bg-brand-start/5"
-                  : "border-border hover:border-brand-start/50"
-              }`}
-              type="button"
-            >
-              <Building2 className={`w-5 h-5 ${role === "educator" ? "text-brand-blue" : "text-muted-foreground"}`} />
-              <span className={`font-medium ${role === "educator" ? "text-foreground" : "text-muted-foreground"}`}>
-                Educator
-              </span>
-            </button>
-            <button
-              onClick={() => setRole("student")}
-              className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                role === "student"
-                  ? "border-brand-start bg-brand-start/5"
-                  : "border-border hover:border-brand-start/50"
-              }`}
-              type="button"
-            >
-              <GraduationCap className={`w-5 h-5 ${role === "student" ? "text-brand-blue" : "text-muted-foreground"}`} />
-              <span className={`font-medium ${role === "student" ? "text-foreground" : "text-muted-foreground"}`}>
-                Student
-              </span>
-            </button>
-          </div> */}
-
-          {/* Registration Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name *</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Your full name"
-                className="h-12"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address *</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="your@email.com"
-                className="h-12"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+              <Label>Full Name</Label>
+              <Input 
+                placeholder="John Doe" 
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required 
               />
             </div>
 
             {role === "educator" && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="coachingName">Coaching/Institute Name *</Label>
-                  <Input
-                    id="coachingName"
-                    type="text"
-                    placeholder="Your coaching name"
-                    className="h-12"
-                    required
+                  <Label>Coaching Name</Label>
+                  <Input 
+                    placeholder="Ex: Zenith Academy" 
                     value={coachingName}
                     onChange={(e) => setCoachingName(e.target.value)}
+                    required 
                   />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="city">City *</Label>
-                  <Input
-                    id="city"
-                    type="text"
-                    placeholder="Your city"
-                    className="h-12"
-                    required
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                  <Label>Phone Number</Label>
+                  <Input 
+                    placeholder="+91 98765 43210" 
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required 
                   />
                 </div>
               </>
             )}
 
-            {role === "student" && (
-              <div className="space-y-2">
-                <Label htmlFor="coachingCode">Coaching Access Code (Optional)</Label>
-                <Input
-                  id="coachingCode"
-                  type="text"
-                  placeholder="Enter code if you have one"
-                  className="h-12"
-                  value={coachingCode}
-                  onChange={(e) => setCoachingCode(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  For now, this is required to link you to the right coaching. Later it will auto-detect from subdomain.
-                </p>
-              </div>
-            )}
-
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input
-                id="phone"
-                type="tel"
-                placeholder="+91 98765 43210"
-                className="h-12"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+              <Label>Email</Label>
+              <Input 
+                type="email" 
+                placeholder="john@example.com" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required 
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password *</Label>
+              <Label>Password</Label>
               <div className="relative">
                 <Input
-                  id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Create a strong password"
-                  className="h-12 pr-12"
-                  required
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            {role === "educator" && (
-              <div className="space-y-2">
-                <Label>Logo (Optional)</Label>
-                <div
-                  className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-brand-start/50 transition-colors cursor-pointer"
-                  onClick={() => toast.info("Logo upload will be connected to Firebase Storage next.")}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
-                </div>
-              </div>
-            )}
-
-            {/* Terms */}
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="terms"
-                checked={acceptedTerms}
-                onCheckedChange={(checked) => setAcceptedTerms(checked as boolean)}
-              />
-              <label htmlFor="terms" className="text-sm text-muted-foreground leading-relaxed">
-                I agree to the{" "}
-                <Link to="/terms" className="text-brand-blue hover:underline">
-                  Terms of Service
-                </Link>{" "}
-                and{" "}
-                <Link to="/privacy" className="text-brand-blue hover:underline">
-                  Privacy Policy
-                </Link>
+            <div className="flex items-center space-x-2">
+              <Checkbox id="terms" checked={agreed} onCheckedChange={(c) => setAgreed(c as boolean)} />
+              <label htmlFor="terms" className="text-sm text-muted-foreground leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                I agree to the <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
               </label>
             </div>
 
-            <Button
-              type="submit"
-              variant="hero"
-              size="xl"
-              className="w-full group"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                "Creating account..."
-              ) : (
-                <>
-                  Create Account
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
+            <Button type="submit" className="w-full gradient-bg text-white" disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {role === "educator" ? "Get Started" : "Join Now"}
+              {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
             </Button>
           </form>
-
-          {/* Divider */}
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-background text-muted-foreground">Or continue with</span>
-            </div>
+          
+          <div className="text-center text-sm">
+             Already have an account?{" "}
+             <Link to={`/login?role=${role}`} className="font-medium text-primary hover:underline">
+               Log in
+             </Link>
           </div>
-
-          {/* Social Signup (UI only for now) */}
-          <Button
-            variant="outline"
-            className="w-full h-12"
-            type="button"
-            onClick={() => toast.info("Google signup will be added next.")}
-          >
-            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="currentColor"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            Continue with Google
-          </Button>
-
-          {/* Login Link */}
-          <p className="text-center text-muted-foreground mt-8">
-            Already have an account?{" "}
-            <Link to={`/login?role=${role}`} className="text-brand-blue hover:underline font-medium">
-              Sign in
-            </Link>
-          </p>
         </motion.div>
-        {/* Place the same Signup form JSX you already had (inputs bound to state variables above). */}
-        {/* This file preserves all UI. */}
-        {/* ... */}
+      </div>
+
+      <div className="hidden lg:flex relative overflow-hidden bg-muted">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/20" />
+        <div className="relative z-10 flex flex-col items-center justify-center h-full p-12 text-center">
+            {role === "educator" ? (
+                <>
+                  <Building2 className="h-20 w-20 text-primary mb-6" />
+                  <h2 className="text-3xl font-bold mb-4">Build Your Brand</h2>
+                  <p className="text-lg text-muted-foreground max-w-md">
+                    Create your own white-labeled coaching website in minutes.
+                  </p>
+                </>
+            ) : (
+                <>
+                  <GraduationCap className="h-20 w-20 text-primary mb-6" />
+                  <h2 className="text-3xl font-bold mb-4">Master Your Subjects</h2>
+                  <p className="text-lg text-muted-foreground max-w-md">
+                    Join top educators and access premium course material.
+                  </p>
+                </>
+            )}
+        </div>
       </div>
     </div>
   );
 }
-

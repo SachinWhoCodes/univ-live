@@ -34,71 +34,71 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const tenantSlug = getTenantSlugFromHostname();
   const isTenantDomain = !!tenantSlug;
 
+  // 1. Fetch Tenant Data (Coaching info)
   useEffect(() => {
     let mounted = true;
     async function loadTenant() {
       setLoading(true);
       setTenant(null);
+      
       if (!tenantSlug) {
         setLoading(false);
         return;
       }
 
       try {
-        // Query educator profiles where tenantSlug matches (tenantSlug is stored on educator doc)
-        const q = query(collection(db, "educators"), where("tenantSlug", "==", tenantSlug));
-        const snaps = await getDocs(q);
-        if (!mounted) return;
-
-        if (!snaps.empty) {
-          const d = snaps.docs[0].data() as any;
-          setTenant({
-            educatorId: snaps.docs[0].id,
-            tenantSlug: tenantSlug,
-            coachingName: typeof d.coachingName === "string" ? d.coachingName : "",
-            tagline: typeof d.tagline === "string" ? d.tagline : "",
-            contact: d.contact || {},
-            socials: d.socials || {},
-            websiteConfig: d.websiteConfig || null,
-          });
-        } else {
-          // Tenant slug not found in DB – keep tenant null
-          setTenant(null);
+        const q = query(collection(db, "educators"), where("slug", "==", tenantSlug));
+        const snap = await getDocs(q);
+        
+        if (mounted) {
+          if (!snap.empty) {
+            const data = snap.docs[0].data();
+            setTenant({
+              educatorId: snap.docs[0].id,
+              tenantSlug: data.slug,
+              coachingName: data.coachingName,
+              tagline: data.tagline,
+              websiteConfig: data.websiteConfig,
+            });
+          } else {
+            setTenant(null);
+          }
         }
       } catch (err) {
         console.error("Failed to load tenant", err);
-        setTenant(null);
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
     loadTenant();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [tenantSlug]);
 
-  // Enforce: if there is a logged-in STUDENT and their profile.tenantSlug != current tenantSlug then sign them out.
+  // 2. Security Check: Enforce Tenant Membership for Students
   useEffect(() => {
     if (!profile || !isTenantDomain) return;
 
     if (profile.role === "STUDENT") {
-      // if user's tenantSlug doesn't match current subdomain, sign them out
-      if ((profile.tenantSlug || "") !== (tenantSlug || "")) {
-        // sign out and show friendly error
+      // ✅ NEW: Check Array
+      const enrolledList = profile.enrolledTenants || [];
+      // Fallback for old data
+      const legacyTenant = profile.tenantSlug;
+      
+      const isEnrolled = enrolledList.includes(tenantSlug!) || legacyTenant === tenantSlug;
+
+      if (!isEnrolled) {
         (async () => {
           try {
             await signOut(auth);
           } catch (e) {
             // ignore
           } finally {
-            toast.error("This account does not belong to this coaching website. Please login from your coaching subdomain.");
+            toast.error("You are not registered with this coaching. Please register first.");
           }
         })();
       }
     }
-    // Educators: no forced sign-out (they may manage from main domain)
   }, [profile, isTenantDomain, tenantSlug]);
 
   const value: TenantContextValue = {
@@ -118,4 +118,3 @@ export function useTenant() {
   }
   return ctx;
 }
-
