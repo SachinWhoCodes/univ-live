@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   User,
@@ -10,6 +10,8 @@ import {
   LogOut,
   Eye,
   EyeOff,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,24 +22,336 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 
+import { onAuthStateChanged, signOut, updateProfile, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "@/lib/firebase";
+
+type EducatorPrefs = {
+  notifications?: {
+    email?: boolean;
+    sms?: boolean;
+    push?: boolean;
+  };
+};
+
+type EducatorProfileDoc = {
+  fullName?: string;
+  displayName?: string;
+  phone?: string;
+  photoURL?: string;
+  prefs?: EducatorPrefs;
+};
+
 export default function Settings() {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const [uid, setUid] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Profile fields
+  const [fullName, setFullName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [photoURL, setPhotoURL] = useState<string>("");
+
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Password fields
   const [showPassword, setShowPassword] = useState(false);
+  const [currentPass, setCurrentPass] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Notification switches
   const [notifications, setNotifications] = useState({
     email: true,
-    push: true,
     sms: false,
-    newStudent: true,
-    testCompleted: true,
-    payments: true,
-    weeklyReport: true,
+    push: true,
   });
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
-  const handleSave = () => {
-    toast({
-      title: "Settings saved!",
-      description: "Your preferences have been updated.",
+  // Auth bootstrap + load profile
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUid(u?.uid ?? null);
+
+      if (!u) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const profileRef = doc(db, "educators", u.uid);
+        const snap = await getDoc(profileRef);
+        const data = (snap.exists() ? (snap.data() as EducatorProfileDoc) : {}) || {};
+
+        setEmail(u.email || "");
+        setFullName(data.fullName || u.displayName || "");
+        setDisplayName(data.displayName || u.displayName || "");
+        setPhone(data.phone || "");
+        setPhotoURL(data.photoURL || u.photoURL || "");
+
+        const n = data.prefs?.notifications;
+        setNotifications({
+          email: n?.email ?? true,
+          sms: n?.sms ?? false,
+          push: n?.push ?? true,
+        });
+      } catch {
+        toast({
+          title: "Failed to load settings",
+          description: "Please refresh and try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
     });
-  };
+
+    return () => unsub();
+  }, []);
+
+  const initials = (displayName || fullName || "U")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((x) => x[0]?.toUpperCase())
+    .join("");
+
+  async function handlePickPhoto() {
+    fileRef.current?.click();
+  }
+
+  async function handleUploadPhoto(file: File) {
+    if (!uid) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Max 2MB. Please upload a smaller image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const path = `educators/${uid}/profile/avatar_${Date.now()}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+
+      // Update auth profile + firestore
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { photoURL: url });
+      }
+      await setDoc(
+        doc(db, "educators", uid),
+        { photoURL: url, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+
+      setPhotoURL(url);
+
+      toast({
+        title: "Photo updated",
+        description: "Your profile photo has been changed.",
+      });
+    } catch {
+      toast({
+        title: "Upload failed",
+        description: "Could not upload photo. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!uid || !auth.currentUser) return;
+
+    if (!fullName.trim() || !displayName.trim()) {
+      toast({
+        title: "Missing details",
+        description: "Full name and display name are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      await updateProfile(auth.currentUser, {
+        displayName: displayName.trim(),
+        photoURL: photoURL || auth.currentUser.photoURL || undefined,
+      });
+
+      await setDoc(
+        doc(db, "educators", uid),
+        {
+          fullName: fullName.trim(),
+          displayName: displayName.trim(),
+          phone: phone.trim(),
+          photoURL: photoURL || auth.currentUser.photoURL || "",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      toast({
+        title: "Saved",
+        description: "Profile information updated successfully.",
+      });
+    } catch {
+      toast({
+        title: "Save failed",
+        description: "Could not save changes. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function saveNotificationPrefs() {
+    if (!uid) return;
+
+    setSavingPrefs(true);
+    try {
+      await setDoc(
+        doc(db, "educators", uid),
+        {
+          prefs: {
+            notifications: {
+              email: notifications.email,
+              sms: notifications.sms,
+              push: notifications.push,
+            },
+          },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      toast({
+        title: "Preferences saved",
+        description: "Notification settings updated.",
+      });
+    } catch {
+      toast({
+        title: "Failed",
+        description: "Could not save notification preferences.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingPrefs(false);
+    }
+  }
+
+  async function handleUpdatePassword() {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    if (!user.email) {
+      toast({
+        title: "Password not available",
+        description: "This account doesn't have an email attached.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!currentPass || !newPass || !confirmPass) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill all password fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newPass !== confirmPass) {
+      toast({
+        title: "Passwords do not match",
+        description: "New password and confirm password must match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newPass.length < 6) {
+      toast({
+        title: "Weak password",
+        description: "Password should be at least 6 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const cred = EmailAuthProvider.credential(user.email, currentPass);
+      await reauthenticateWithCredential(user, cred);
+      await updatePassword(user, newPass);
+
+      setCurrentPass("");
+      setNewPass("");
+      setConfirmPass("");
+
+      toast({
+        title: "Password updated",
+        description: "Your password has been changed successfully.",
+      });
+    } catch (e: any) {
+      const msg =
+        typeof e?.message === "string" && e.message.includes("auth/wrong-password")
+          ? "Current password is incorrect."
+          : "Could not update password. Please try again.";
+      toast({
+        title: "Update failed",
+        description: msg,
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingPassword(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await signOut(auth);
+      window.location.href = "/login?role=educator";
+    } catch {
+      toast({
+        title: "Logout failed",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        Loading settings...
+      </div>
+    );
+  }
+
+  if (!uid) {
+    return (
+      <div className="p-6 rounded-2xl border border-dashed border-border text-center text-muted-foreground">
+        Please login as educator to access Settings.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -50,10 +364,7 @@ export default function Settings() {
       </div>
 
       {/* Profile Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -64,55 +375,98 @@ export default function Settings() {
           <CardContent className="space-y-6">
             <div className="flex items-center gap-4">
               <Avatar className="h-20 w-20">
-                <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=educator" />
-                <AvatarFallback>DS</AvatarFallback>
+                <AvatarImage src={photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=educator"} />
+                <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              <div className="space-y-2">
-                <Button variant="outline" size="sm">
-                  Change Photo
+
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePickPhoto}
+                  disabled={uploadingPhoto}
+                >
+                  {uploadingPhoto ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Change Photo
+                    </>
+                  )}
                 </Button>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mt-2">
                   JPG, PNG or GIF. Max 2MB.
                 </p>
+
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadPhoto(f);
+                    if (e.target) e.target.value = "";
+                  }}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Full Name</Label>
-                <Input defaultValue="Dr. Sharma" />
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
               </div>
+
               <div className="space-y-2">
                 <Label>Display Name</Label>
-                <Input defaultValue="Dr. Sharma" />
+                <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Mail className="h-4 w-4" />
                   Email
                 </Label>
-                <Input defaultValue="sharma@coaching.com" />
+                <Input value={email} disabled />
               </div>
+
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Phone className="h-4 w-4" />
                   Phone
                 </Label>
-                <Input defaultValue="+91 98765 43210" />
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+91 ..."
+                />
               </div>
             </div>
 
-            <Button className="gradient-bg text-white" onClick={handleSave}>
-              Save Changes
+            <Button
+              variant="outline"
+              onClick={saveProfile}
+              disabled={savingProfile}
+            >
+              {savingProfile ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
             </Button>
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* Password Section */}
+      {/* Change Password */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -128,10 +482,23 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Current Password</Label>
+              <Input
+                type="password"
+                placeholder="Enter current password"
+                value={currentPass}
+                onChange={(e) => setCurrentPass(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>New Password</Label>
               <div className="relative">
                 <Input
                   type={showPassword ? "text" : "password"}
-                  placeholder="Enter current password"
+                  placeholder="Enter new password"
+                  value={newPass}
+                  onChange={(e) => setNewPass(e.target.value)}
+                  className="pr-10"
                 />
                 <Button
                   type="button"
@@ -140,27 +507,35 @@ export default function Settings() {
                   className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
                   onClick={() => setShowPassword(!showPassword)}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>New Password</Label>
-                <Input type="password" placeholder="Enter new password" />
-              </div>
-              <div className="space-y-2">
-                <Label>Confirm New Password</Label>
-                <Input type="password" placeholder="Confirm new password" />
-              </div>
+            <div className="space-y-2">
+              <Label>Confirm New Password</Label>
+              <Input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPass}
+                onChange={(e) => setConfirmPass(e.target.value)}
+              />
             </div>
 
-            <Button variant="outline">Update Password</Button>
+            <Button
+              variant="outline"
+              onClick={handleUpdatePassword}
+              disabled={updatingPassword}
+            >
+              {updatingPassword ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Updating...
+                </>
+              ) : (
+                "Update Password"
+              )}
+            </Button>
           </CardContent>
         </Card>
       </motion.div>
@@ -180,7 +555,6 @@ export default function Settings() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              <h4 className="text-sm font-medium">Notification Channels</h4>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -196,25 +570,12 @@ export default function Settings() {
                     }
                   />
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Push Notifications</p>
-                    <p className="text-xs text-muted-foreground">
-                      Browser push notifications
-                    </p>
-                  </div>
-                  <Switch
-                    checked={notifications.push}
-                    onCheckedChange={(checked) =>
-                      setNotifications({ ...notifications, push: checked })
-                    }
-                  />
-                </div>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">SMS Notifications</p>
                     <p className="text-xs text-muted-foreground">
-                      Important alerts via SMS
+                      Receive alerts via SMS
                     </p>
                   </div>
                   <Switch
@@ -224,51 +585,37 @@ export default function Settings() {
                     }
                   />
                 </div>
-              </div>
-            </div>
 
-            <Separator />
-
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">Notification Types</h4>
-              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm">New student enrollments</p>
+                  <div>
+                    <p className="text-sm font-medium">Push Notifications</p>
+                    <p className="text-xs text-muted-foreground">
+                      Get push notifications in-app
+                    </p>
+                  </div>
                   <Switch
-                    checked={notifications.newStudent}
+                    checked={notifications.push}
                     onCheckedChange={(checked) =>
-                      setNotifications({ ...notifications, newStudent: checked })
-                    }
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm">Test completions</p>
-                  <Switch
-                    checked={notifications.testCompleted}
-                    onCheckedChange={(checked) =>
-                      setNotifications({ ...notifications, testCompleted: checked })
-                    }
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm">Payment notifications</p>
-                  <Switch
-                    checked={notifications.payments}
-                    onCheckedChange={(checked) =>
-                      setNotifications({ ...notifications, payments: checked })
-                    }
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm">Weekly performance reports</p>
-                  <Switch
-                    checked={notifications.weeklyReport}
-                    onCheckedChange={(checked) =>
-                      setNotifications({ ...notifications, weeklyReport: checked })
+                      setNotifications({ ...notifications, push: checked })
                     }
                   />
                 </div>
               </div>
+
+              <Button
+                variant="outline"
+                onClick={saveNotificationPrefs}
+                disabled={savingPrefs}
+              >
+                {savingPrefs ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Preferences"
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -295,7 +642,16 @@ export default function Settings() {
                   Add an extra layer of security to your account
                 </p>
               </div>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  toast({
+                    title: "Coming soon",
+                    description: "2FA will be enabled in a later phase.",
+                  })
+                }
+              >
                 Enable
               </Button>
             </div>
@@ -307,7 +663,16 @@ export default function Settings() {
                   Manage your active login sessions
                 </p>
               </div>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  toast({
+                    title: "Info",
+                    description: "Session management will be added later.",
+                  })
+                }
+              >
                 View All
               </Button>
             </div>
@@ -321,11 +686,11 @@ export default function Settings() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
       >
-        <Card className="border-destructive/50">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base text-destructive flex items-center gap-2">
               <LogOut className="h-5 w-5" />
-              Account Actions
+              Danger Zone
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -336,7 +701,18 @@ export default function Settings() {
                   This will end all active sessions
                 </p>
               </div>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  toast({
+                    title: "Note",
+                    description:
+                      "Firebase client can't revoke sessions for other devices yet. Signing you out from this device.",
+                  });
+                  handleLogout();
+                }}
+              >
                 Logout All
               </Button>
             </div>
@@ -350,8 +726,33 @@ export default function Settings() {
                   Permanently delete your account and all data
                 </p>
               </div>
-              <Button variant="destructive" size="sm">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() =>
+                  toast({
+                    title: "Blocked for safety",
+                    description:
+                      "Account deletion will be handled from Admin in this phase.",
+                    variant: "destructive",
+                  })
+                }
+              >
                 Delete
+              </Button>
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Logout</p>
+                <p className="text-xs text-muted-foreground">
+                  End your current session
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                Logout
               </Button>
             </div>
           </CardContent>
@@ -360,3 +761,4 @@ export default function Settings() {
     </div>
   );
 }
+

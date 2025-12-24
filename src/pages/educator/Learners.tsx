@@ -1,18 +1,28 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  Users,
   Search,
   Filter,
   MoreVertical,
   Eye,
+  UserCheck,
+  UserX,
   Mail,
-  Trash2,
-  Download,
+  Phone,
+  MapPin,
+  Loader2,
+  TrendingUp,
+  Award,
+  Target,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -21,254 +31,245 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import DataTable from "@/components/educator/DataTable";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-} from "recharts";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import EmptyState from "@/components/educator/EmptyState";
 
-interface Learner {
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  Timestamp,
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+  limit,
+} from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+
+type Student = {
   id: string;
   name: string;
-  email: string;
-  phone: string;
-  avatar: string;
-  batch: string;
-  attempts: number;
-  avgScore: number;
-  lastActive: string;
-  joinDate: string;
+  email?: string;
+  phone?: string;
+  city?: string;
   status: "active" | "inactive";
+  createdAt?: Timestamp | null;
+};
+
+type Attempt = {
+  id: string;
+  studentId: string;
+  testTitle?: string;
+  subject?: string;
+  scorePercent?: number;
+  createdAt?: Timestamp | null;
+};
+
+function fmtDate(ts?: Timestamp | null) {
+  if (!ts) return "—";
+  try {
+    return ts.toDate().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
 }
 
-const learners: Learner[] = [
-  {
-    id: "1",
-    name: "Rahul Sharma",
-    email: "rahul.sharma@email.com",
-    phone: "+91 98765 43210",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=rahul",
-    batch: "NEET 2024",
-    attempts: 45,
-    avgScore: 78,
-    lastActive: "2 hours ago",
-    joinDate: "Jan 15, 2024",
-    status: "active",
-  },
-  {
-    id: "2",
-    name: "Priya Patel",
-    email: "priya.patel@email.com",
-    phone: "+91 98765 43211",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=priya",
-    batch: "NEET 2024",
-    attempts: 38,
-    avgScore: 82,
-    lastActive: "5 hours ago",
-    joinDate: "Jan 20, 2024",
-    status: "active",
-  },
-  {
-    id: "3",
-    name: "Amit Kumar",
-    email: "amit.kumar@email.com",
-    phone: "+91 98765 43212",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=amit",
-    batch: "JEE Advanced",
-    attempts: 52,
-    avgScore: 71,
-    lastActive: "1 day ago",
-    joinDate: "Feb 01, 2024",
-    status: "active",
-  },
-  {
-    id: "4",
-    name: "Sneha Gupta",
-    email: "sneha.gupta@email.com",
-    phone: "+91 98765 43213",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=sneha",
-    batch: "JEE Mains",
-    attempts: 28,
-    avgScore: 65,
-    lastActive: "3 days ago",
-    joinDate: "Feb 10, 2024",
-    status: "inactive",
-  },
-  {
-    id: "5",
-    name: "Vikram Singh",
-    email: "vikram.singh@email.com",
-    phone: "+91 98765 43214",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=vikram",
-    batch: "NEET 2024",
-    attempts: 41,
-    avgScore: 74,
-    lastActive: "12 hours ago",
-    joinDate: "Feb 15, 2024",
-    status: "active",
-  },
-];
-
-const performanceData = [
-  { month: "Jan", score: 65 },
-  { month: "Feb", score: 68 },
-  { month: "Mar", score: 72 },
-  { month: "Apr", score: 70 },
-  { month: "May", score: 78 },
-  { month: "Jun", score: 82 },
-];
-
-const subjectData = [
-  { subject: "Physics", score: 75, fullMark: 100 },
-  { subject: "Chemistry", score: 82, fullMark: 100 },
-  { subject: "Biology", score: 88, fullMark: 100 },
-  { subject: "Maths", score: 70, fullMark: 100 },
-  { subject: "English", score: 85, fullMark: 100 },
-];
-
-const attemptsList = [
-  { id: "1", test: "Physics Mock Test 1", score: 78, rank: 12, time: "45 min", date: "Jun 10, 2024" },
-  { id: "2", test: "Chemistry Full Test", score: 82, rank: 8, time: "2h 30min", date: "Jun 8, 2024" },
-  { id: "3", test: "Biology Chapter 5", score: 85, rank: 5, time: "30 min", date: "Jun 5, 2024" },
-  { id: "4", test: "NEET Mock Test 3", score: 72, rank: 18, time: "3h 0min", date: "Jun 1, 2024" },
-];
+function statusBadge(status: "active" | "inactive") {
+  return status === "active"
+    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+    : "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300";
+}
 
 export default function Learners() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedBatch, setSelectedBatch] = useState("all");
-  const [selectedLearner, setSelectedLearner] = useState<Learner | null>(null);
+  const [uid, setUid] = useState<string | null>(null);
 
-  const filteredLearners = learners.filter((learner) => {
-    const matchesSearch =
-      learner.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      learner.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesBatch =
-      selectedBatch === "all" || learner.batch === selectedBatch;
-    return matchesSearch && matchesBatch;
-  });
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const columns = [
-    {
-      key: "name",
-      header: "Student",
-      render: (learner: Learner) => (
-        <div className="flex items-center gap-3">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={learner.avatar} />
-            <AvatarFallback>{learner.name[0]}</AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium text-sm">{learner.name}</p>
-            <p className="text-xs text-muted-foreground">{learner.email}</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "batch",
-      header: "Batch",
-      render: (learner: Learner) => (
-        <Badge variant="secondary" className="font-normal">
-          {learner.batch}
-        </Badge>
-      ),
-    },
-    {
-      key: "attempts",
-      header: "Attempts",
-      className: "text-center",
-    },
-    {
-      key: "avgScore",
-      header: "Avg Score",
-      className: "text-center",
-      render: (learner: Learner) => (
-        <span
-          className={
-            learner.avgScore >= 75
-              ? "text-green-600"
-              : learner.avgScore >= 60
-              ? "text-amber-600"
-              : "text-red-600"
-          }
-        >
-          {learner.avgScore}%
-        </span>
-      ),
-    },
-    {
-      key: "lastActive",
-      header: "Last Active",
-      className: "hidden sm:table-cell",
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (learner: Learner) => (
-        <Badge
-          variant={learner.status === "active" ? "default" : "secondary"}
-          className={
-            learner.status === "active"
-              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : ""
-          }
-        >
-          {learner.status}
-        </Badge>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      className: "w-10",
-      render: (learner: Learner) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setSelectedLearner(learner)}>
-              <Eye className="h-4 w-4 mr-2" />
-              View Profile
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Mail className="h-4 w-4 mr-2" />
-              Send Message
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Remove
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
-    },
-  ];
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  // detail modal
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Student | null>(null);
+
+  const [recentAttempts, setRecentAttempts] = useState<Attempt[]>([]);
+  const [attemptStatsLoading, setAttemptStatsLoading] = useState(false);
+
+  const [avgScore, setAvgScore] = useState(0);
+  const [totalAttempts, setTotalAttempts] = useState(0);
+  const [bestSubject, setBestSubject] = useState<string>("—");
+
+  // auth
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  // students list (realtime)
+  useEffect(() => {
+    if (!uid) {
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const ref = collection(db, "educators", uid, "students");
+    const q = query(ref, orderBy("createdAt", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: Student[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            name: String(data?.name || data?.fullName || "Student"),
+            email: data?.email ? String(data.email) : undefined,
+            phone: data?.phone ? String(data.phone) : undefined,
+            city: data?.city ? String(data.city) : undefined,
+            status: (data?.status || (data?.isActive ? "active" : "inactive") || "active") as
+              | "active"
+              | "inactive",
+            createdAt: (data?.createdAt as Timestamp) || null,
+          };
+        });
+
+        setStudents(rows);
+        setLoading(false);
+      },
+      () => {
+        toast.error("Failed to load learners");
+        setStudents([]);
+        setLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [uid]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return students.filter((s) => {
+      const matchesSearch =
+        !q ||
+        s.name.toLowerCase().includes(q) ||
+        (s.email || "").toLowerCase().includes(q) ||
+        (s.phone || "").toLowerCase().includes(q);
+
+      const matchesStatus = statusFilter === "all" || s.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [students, search, statusFilter]);
+
+  async function toggleActive(s: Student) {
+    if (!uid) return;
+    try {
+      const next = s.status === "active" ? "inactive" : "active";
+      await updateDoc(doc(db, "educators", uid, "students", s.id), { status: next });
+      toast.success(next === "active" ? "Student activated" : "Student deactivated");
+    } catch {
+      toast.error("Could not update status");
+    }
+  }
+
+  async function openStudentDetails(s: Student) {
+    if (!uid) return;
+
+    setSelected(s);
+    setOpen(true);
+
+    setAttemptStatsLoading(true);
+    setRecentAttempts([]);
+    setAvgScore(0);
+    setTotalAttempts(0);
+    setBestSubject("—");
+
+    try {
+      const attemptsRef = collection(db, "educators", uid, "attempts");
+      const q = query(
+        attemptsRef,
+        where("studentId", "==", s.id),
+        orderBy("createdAt", "desc"),
+        limit(20)
+      );
+
+      const snap = await getDocs(q);
+      const rows: Attempt[] = snap.docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          studentId: String(data?.studentId || ""),
+          testTitle: data?.testTitle ? String(data.testTitle) : undefined,
+          subject: data?.subject ? String(data.subject) : undefined,
+          scorePercent: typeof data?.scorePercent === "number" ? data.scorePercent : undefined,
+          createdAt: (data?.createdAt as Timestamp) || null,
+        };
+      });
+
+      setRecentAttempts(rows);
+      setTotalAttempts(rows.length);
+
+      const scores = rows
+        .map((a) => a.scorePercent)
+        .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      setAvgScore(Math.round(avg));
+
+      const bySubject: Record<string, number[]> = {};
+      rows.forEach((a) => {
+        if (!a.subject) return;
+        if (typeof a.scorePercent !== "number") return;
+        if (!bySubject[a.subject]) bySubject[a.subject] = [];
+        bySubject[a.subject].push(a.scorePercent);
+      });
+
+      const best = Object.entries(bySubject)
+        .map(([subj, arr]) => ({
+          subject: subj,
+          avg: arr.reduce((a, b) => a + b, 0) / arr.length,
+          count: arr.length,
+        }))
+        .sort((a, b) => b.avg - a.avg)[0];
+
+      if (best) setBestSubject(`${best.subject} (${Math.round(best.avg)}%)`);
+    } catch {
+      toast.error("Could not load student attempts");
+    } finally {
+      setAttemptStatsLoading(false);
+    }
+  }
+
+  if (!uid) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="Please login as Educator"
+        description="You must be logged in to manage learners."
+        actionLabel="Go to Login"
+        onAction={() => (window.location.href = "/login?role=educator")}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -277,251 +278,300 @@ export default function Learners() {
         <div>
           <h1 className="text-2xl font-display font-bold">Learners</h1>
           <p className="text-muted-foreground text-sm">
-            Manage and track your students' progress
+            Manage your students and view their performance
           </p>
         </div>
-        <Button className="gradient-bg text-white">
-          <Download className="h-4 w-4 mr-2" />
-          Export Data
-        </Button>
       </div>
 
       {/* Filters */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row gap-3"
-      >
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name or email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            placeholder="Search learners..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 rounded-xl"
           />
         </div>
-        <Select value={selectedBatch} onValueChange={setSelectedBatch}>
-          <SelectTrigger className="w-full sm:w-40">
+
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+          <SelectTrigger className="w-full sm:w-44 rounded-xl">
             <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="All Batches" />
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Batches</SelectItem>
-            <SelectItem value="NEET 2024">NEET 2024</SelectItem>
-            <SelectItem value="JEE Advanced">JEE Advanced</SelectItem>
-            <SelectItem value="JEE Mains">JEE Mains</SelectItem>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
-      </motion.div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: "Total Learners", value: learners.length },
-          { label: "Active", value: learners.filter((l) => l.status === "active").length },
-          { label: "Avg Score", value: "74%" },
-          { label: "This Week", value: "+12" },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-                <p className="text-2xl font-bold">{stat.value}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
       </div>
 
-      {/* Table */}
-      <DataTable
-        data={filteredLearners}
-        columns={columns}
-        onRowClick={(learner) => setSelectedLearner(learner)}
-      />
+      {/* List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          Loading learners...
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No learners found"
+          description="Once students register on your subdomain, they will appear here."
+          actionLabel="OK"
+          onAction={() => toast.info("Student subdomain login will be wired next")}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filtered.map((s, index) => (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: index * 0.03 }}
+            >
+              <Card className="card-hover h-full">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-base truncate">{s.name}</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Joined {fmtDate(s.createdAt)}
+                      </p>
+                    </div>
 
-      {/* Learner Profile Dialog */}
-      <Dialog open={!!selectedLearner} onOpenChange={() => setSelectedLearner(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <Avatar className="h-12 w-12">
-                <AvatarImage src={selectedLearner?.avatar} />
-                <AvatarFallback>{selectedLearner?.name[0]}</AvatarFallback>
-              </Avatar>
-              <div>
-                <h2 className="text-xl font-semibold">{selectedLearner?.name}</h2>
-                <p className="text-sm text-muted-foreground font-normal">
-                  {selectedLearner?.email}
-                </p>
-              </div>
-            </DialogTitle>
-          </DialogHeader>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className={statusBadge(s.status)}>
+                        {s.status}
+                      </Badge>
 
-          <Tabs defaultValue="overview" className="mt-4">
-            <TabsList className="w-full justify-start">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="attempts">Attempts</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            </TabsList>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openStudentDetails(s)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View
+                          </DropdownMenuItem>
 
-            <TabsContent value="overview" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">Batch</p>
-                    <p className="font-medium">{selectedLearner?.batch}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">Join Date</p>
-                    <p className="font-medium">{selectedLearner?.joinDate}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">Total Attempts</p>
-                    <p className="font-medium">{selectedLearner?.attempts}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">Avg Score</p>
-                    <p className="font-medium text-green-600">
-                      {selectedLearner?.avgScore}%
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Performance Trend</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={performanceData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="month" className="text-xs" />
-                        <YAxis className="text-xs" />
-                        <Tooltip />
-                        <Line
-                          type="monotone"
-                          dataKey="score"
-                          stroke="hsl(204, 91%, 56%)"
-                          strokeWidth={2}
-                          dot={{ fill: "hsl(204, 91%, 56%)" }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                          <DropdownMenuItem onClick={() => toggleActive(s)}>
+                            {s.status === "active" ? (
+                              <>
+                                <UserX className="h-4 w-4 mr-2" />
+                                Deactivate
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="h-4 w-4 mr-2" />
+                                Activate
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
+                </CardHeader>
+
+                <CardContent className="space-y-3">
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    {s.email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        <span className="truncate">{s.email}</span>
+                      </div>
+                    )}
+                    {s.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        <span>{s.phone}</span>
+                      </div>
+                    )}
+                    {s.city && (
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        <span>{s.city}</span>
+                      </div>
+                    )}
+                    {!s.email && !s.phone && !s.city && (
+                      <div className="text-xs text-muted-foreground">
+                        No profile details available.
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-xl"
+                    onClick={() => openStudentDetails(s)}
+                  >
+                    View Performance
+                  </Button>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
-            <TabsContent value="attempts" className="mt-4">
-              <Card>
-                <CardContent className="p-0">
-                  <div className="divide-y divide-border">
-                    {attemptsList.map((attempt) => (
+      {/* Student Detail Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="rounded-2xl max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Student Profile</DialogTitle>
+          </DialogHeader>
+
+          {!selected ? (
+            <div className="py-8 text-center text-muted-foreground">No student selected.</div>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Card className="card-soft border-0">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                      <Target className="h-4 w-4" />
+                      Attempts
+                    </div>
+                    <div className="text-2xl font-bold mt-2">{totalAttempts}</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="card-soft border-0">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                      <TrendingUp className="h-4 w-4" />
+                      Avg Score
+                    </div>
+                    <div className="text-2xl font-bold mt-2">{avgScore}%</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="card-soft border-0">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                      <Award className="h-4 w-4" />
+                      Best Subject
+                    </div>
+                    <div className="text-base font-semibold mt-2">{bestSubject}</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Details */}
+              <div className="p-4 rounded-xl bg-card border border-border">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-lg">{selected.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Joined {fmtDate(selected.createdAt)} •{" "}
+                      <span className={cn("font-medium", selected.status === "active" ? "text-green-600" : "text-slate-500")}>
+                        {selected.status}
+                      </span>
+                    </p>
+
+                    <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                      {selected.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4" />
+                          <span className="truncate">{selected.email}</span>
+                        </div>
+                      )}
+                      {selected.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4" />
+                          <span>{selected.phone}</span>
+                        </div>
+                      )}
+                      {selected.city && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          <span>{selected.city}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    className="rounded-xl"
+                    onClick={() => toggleActive(selected)}
+                  >
+                    {selected.status === "active" ? (
+                      <>
+                        <UserX className="h-4 w-4 mr-2" />
+                        Deactivate
+                      </>
+                    ) : (
+                      <>
+                        <UserCheck className="h-4 w-4 mr-2" />
+                        Activate
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Recent Attempts */}
+              <div>
+                <p className="font-semibold mb-3">Recent Attempts</p>
+
+                {attemptStatsLoading ? (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Loading attempts...
+                  </div>
+                ) : recentAttempts.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-8 text-center border border-dashed border-border rounded-xl">
+                    No attempts yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {recentAttempts.slice(0, 8).map((a) => (
                       <div
-                        key={attempt.id}
-                        className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-card"
                       >
-                        <div>
-                          <p className="font-medium text-sm">{attempt.test}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {a.testTitle || "Test Attempt"}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {attempt.date} • {attempt.time}
+                            {a.subject || "General"} • {fmtDate(a.createdAt)}
                           </p>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <p className="font-medium text-green-600">{attempt.score}%</p>
-                            <p className="text-xs text-muted-foreground">
-                              Rank #{attempt.rank}
-                            </p>
-                          </div>
-                          <Button variant="outline" size="sm">
-                            AI Review
-                          </Button>
-                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            typeof a.scorePercent === "number" && a.scorePercent >= 70
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : typeof a.scorePercent === "number" && a.scorePercent >= 40
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                          )}
+                        >
+                          {typeof a.scorePercent === "number" ? `${Math.round(a.scorePercent)}%` : "—"}
+                        </Badge>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="analytics" className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Subject-wise Performance</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RadarChart data={subjectData}>
-                          <PolarGrid />
-                          <PolarAngleAxis dataKey="subject" className="text-xs" />
-                          <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                          <Radar
-                            name="Score"
-                            dataKey="score"
-                            stroke="hsl(204, 91%, 56%)"
-                            fill="hsl(204, 91%, 56%)"
-                            fillOpacity={0.3}
-                          />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">AI Recommendations</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                        Focus on Maths
-                      </p>
-                      <p className="text-xs text-amber-600 dark:text-amber-300">
-                        Score 15% below average. Recommend Chapter 3 & 5 revision.
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                      <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                        Strong in Biology
-                      </p>
-                      <p className="text-xs text-green-600 dark:text-green-300">
-                        Top 10% in the batch. Ready for advanced tests.
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                        Consistency improving
-                      </p>
-                      <p className="text-xs text-blue-600 dark:text-blue-300">
-                        Study time increased by 20% this month.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+                )}
               </div>
-            </TabsContent>
-          </Tabs>
+
+              <div className="flex justify-end">
+                <Button className="gradient-bg text-white" onClick={() => setOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+

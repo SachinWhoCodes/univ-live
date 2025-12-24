@@ -14,6 +14,7 @@ import Contact from "./pages/Contact";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
+import RequireRole from "@/components/auth/RequireRole";
 
 // Educator Dashboard
 import EducatorLayout from "./components/educator/EducatorLayout";
@@ -62,7 +63,14 @@ const App = () => (
           <Route path="/signup" element={<Signup />} />
 
           {/* Educator Dashboard Routes */}
-          <Route path="/educator" element={<EducatorLayout />}>
+          <Route
+	  path="/educator"
+	  element={
+	    <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login?role=educator">
+	      <EducatorLayout />
+	    </RequireRole>
+	  }
+	>
             <Route index element={<EducatorDashboard />} />
             <Route path="dashboard" element={<EducatorDashboard />} />
             <Route path="learners" element={<Learners />} />
@@ -78,7 +86,15 @@ const App = () => (
           </Route>
 
           {/* Student Dashboard Routes */}
-          <Route path="/student" element={<StudentLayout />}>
+          <Route
+	  path="/student"
+	  element={
+	    <RequireRole allow={["STUDENT", "ADMIN"]} redirectTo="/login?role=student">
+	      <StudentLayout />
+	    </RequireRole>
+	  }
+	>
+
             <Route index element={<StudentDashboard />} />
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="tests" element={<StudentTests />} />

@@ -1,12 +1,29 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Upload, Check } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+
+import { signUpEducator, signUpStudent } from "@/services/authService";
+
+// Local slugify (so we don’t change your UI to ask for slug)
+function slugify(raw: string) {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9- ]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function randomSuffix() {
+  return Math.floor(1000 + Math.random() * 9000).toString(); // 4 digits
+}
 
 export default function Signup() {
   const [searchParams] = useSearchParams();
@@ -14,20 +31,113 @@ export default function Signup() {
   const [role, setRole] = useState<"educator" | "student">(
     roleParam === "student" ? "student" : "educator"
   );
+
+  const navigate = useNavigate();
+
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
+  // form state
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [coachingName, setCoachingName] = useState("");
+  const [city, setCity] = useState("");
+  const [coachingCode, setCoachingCode] = useState(""); // student tenantSlug for now
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+
+  const heroTitle = useMemo(() => {
+    return role === "educator" ? "Launch Your Website in 6 Hours" : "Start Your Exam Prep Today";
+  }, [role]);
+
+  const heroDesc = useMemo(() => {
+    return role === "educator"
+      ? "AI-powered websites and management tools for modern coaching institutes."
+      : "Access thousands of practice tests and track your progress with AI analytics.";
+  }, [role]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!acceptedTerms) {
       toast.error("Please accept the terms and conditions");
       return;
     }
+
+    if (!name.trim() || !email.trim() || !password) {
+      toast.error("Please fill all required fields.");
+      return;
+    }
+
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    toast.success("Account created! Redirecting to onboarding...");
-    setIsLoading(false);
+    try {
+      if (role === "educator") {
+        if (!coachingName.trim() || !city.trim()) {
+          toast.error("Please enter Coaching Name and City.");
+          return;
+        }
+
+        // auto tenantSlug derived from coachingName (+ city for uniqueness)
+        const base = slugify(`${coachingName}-${city}`) || slugify(coachingName) || "coaching";
+        let tenantSlug = base;
+
+        // Try signup; if slug taken, retry with suffix automatically
+        let lastErr: any = null;
+        for (let i = 0; i < 5; i++) {
+          try {
+            await signUpEducator({
+              name: name.trim(),
+              email: email.trim(),
+              password,
+              coachingName: coachingName.trim(),
+              tenantSlug,
+            });
+            lastErr = null;
+            break;
+          } catch (err: any) {
+            lastErr = err;
+            const msg = String(err?.message || "");
+            if (msg.toLowerCase().includes("slug is already taken")) {
+              tenantSlug = `${base}-${randomSuffix()}`;
+              continue;
+            }
+            throw err;
+          }
+        }
+
+        if (lastErr) throw lastErr;
+
+        toast.success("Account created! Redirecting to dashboard...");
+        navigate("/educator/dashboard", { replace: true });
+        return;
+      }
+
+      // Student
+      // For now, we require coaching code (later it comes from subdomain)
+      if (!coachingCode.trim()) {
+        toast.error("Please enter Coaching Access Code to join your coaching.");
+        return;
+      }
+
+      await signUpStudent({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        tenantSlug: coachingCode.trim(),
+      });
+
+      toast.success("Account created! Redirecting...");
+      navigate("/student/dashboard", { replace: true });
+    } catch (err: any) {
+      const msg =
+        typeof err?.message === "string"
+          ? err.message.replace("Firebase: ", "")
+          : "Signup failed. Please try again.";
+      toast.error(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -44,16 +154,8 @@ export default function Signup() {
         />
         <div className="absolute inset-0 flex items-center justify-center p-12">
           <div className="text-center text-white max-w-md">
-            <h2 className="text-4xl font-display font-bold mb-6">
-              {role === "educator"
-                ? "Launch Your Website in 6 Hours"
-                : "Start Your Exam Prep Today"}
-            </h2>
-            <p className="text-lg text-white/80">
-              {role === "educator"
-                ? "AI-powered websites and management tools for modern coaching institutes."
-                : "Access thousands of practice tests and track your progress with AI analytics."}
-            </p>
+            <h2 className="text-4xl font-display font-bold mb-6">{heroTitle}</h2>
+            <p className="text-lg text-white/80">{heroDesc}</p>
           </div>
         </div>
       </div>
@@ -79,9 +181,7 @@ export default function Signup() {
 
           <h1 className="text-3xl font-display font-bold mb-2">Create your account</h1>
           <p className="text-muted-foreground mb-8">
-            {role === "educator"
-              ? "Start your 14-day free trial"
-              : "Join your coaching and start practicing"}
+            {role === "educator" ? "Start your 14-day free trial" : "Join your coaching and start practicing"}
           </p>
 
           {/* Role Selector */}
@@ -93,6 +193,7 @@ export default function Signup() {
                   ? "border-brand-start bg-brand-start/5"
                   : "border-border hover:border-brand-start/50"
               }`}
+              type="button"
             >
               <Building2 className={`w-5 h-5 ${role === "educator" ? "text-brand-blue" : "text-muted-foreground"}`} />
               <span className={`font-medium ${role === "educator" ? "text-foreground" : "text-muted-foreground"}`}>
@@ -106,6 +207,7 @@ export default function Signup() {
                   ? "border-brand-start bg-brand-start/5"
                   : "border-border hover:border-brand-start/50"
               }`}
+              type="button"
             >
               <GraduationCap className={`w-5 h-5 ${role === "student" ? "text-brand-blue" : "text-muted-foreground"}`} />
               <span className={`font-medium ${role === "student" ? "text-foreground" : "text-muted-foreground"}`}>
@@ -124,6 +226,8 @@ export default function Signup() {
                 placeholder="Your full name"
                 className="h-12"
                 required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
             </div>
 
@@ -135,6 +239,8 @@ export default function Signup() {
                 placeholder="your@email.com"
                 className="h-12"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
@@ -148,6 +254,8 @@ export default function Signup() {
                     placeholder="Your coaching name"
                     className="h-12"
                     required
+                    value={coachingName}
+                    onChange={(e) => setCoachingName(e.target.value)}
                   />
                 </div>
 
@@ -159,6 +267,8 @@ export default function Signup() {
                     placeholder="Your city"
                     className="h-12"
                     required
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
                   />
                 </div>
               </>
@@ -172,7 +282,12 @@ export default function Signup() {
                   type="text"
                   placeholder="Enter code if you have one"
                   className="h-12"
+                  value={coachingCode}
+                  onChange={(e) => setCoachingCode(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  For now, this is required to link you to the right coaching. Later it will auto-detect from subdomain.
+                </p>
               </div>
             )}
 
@@ -183,6 +298,8 @@ export default function Signup() {
                 type="tel"
                 placeholder="+91 98765 43210"
                 className="h-12"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
               />
             </div>
 
@@ -195,6 +312,8 @@ export default function Signup() {
                   placeholder="Create a strong password"
                   className="h-12 pr-12"
                   required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
                 <button
                   type="button"
@@ -209,11 +328,14 @@ export default function Signup() {
             {role === "educator" && (
               <div className="space-y-2">
                 <Label>Logo (Optional)</Label>
-                <div className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-brand-start/50 transition-colors cursor-pointer">
+                <div
+                  className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-brand-start/50 transition-colors cursor-pointer"
+                  onClick={() => toast.info("Logo upload will be connected to Firebase Storage next.")}
+                  role="button"
+                  tabIndex={0}
+                >
                   <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Drag & drop or click to upload
-                  </p>
+                  <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
                 </div>
               </div>
             )}
@@ -265,8 +387,13 @@ export default function Signup() {
             </div>
           </div>
 
-          {/* Social Signup */}
-          <Button variant="outline" className="w-full h-12" type="button">
+          {/* Social Signup (UI only for now) */}
+          <Button
+            variant="outline"
+            className="w-full h-12"
+            type="button"
+            onClick={() => toast.info("Google signup will be added next.")}
+          >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
                 fill="currentColor"
@@ -300,3 +427,4 @@ export default function Signup() {
     </div>
   );
 }
+

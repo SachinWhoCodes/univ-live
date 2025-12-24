@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Plus,
@@ -39,66 +39,195 @@ import {
 import DataTable from "@/components/educator/DataTable";
 import EmptyState from "@/components/educator/EmptyState";
 import { toast } from "@/hooks/use-toast";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  Timestamp,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
 interface AccessCode {
   id: string;
   code: string;
   testSeries: string;
+  testSeriesId?: string;
   maxUses: number;
   usesLeft: number;
   expiry: string;
   status: "active" | "expired" | "exhausted";
   createdAt: string;
+
+  // raw for edit/logic
+  usesUsed?: number;
+  expiresAtTs?: Timestamp | null;
 }
 
-const accessCodes: AccessCode[] = [
-  {
-    id: "1",
-    code: "NEET2024-PHYSICS",
-    testSeries: "NEET Physics Complete Package",
-    maxUses: 100,
-    usesLeft: 65,
-    expiry: "Dec 31, 2024",
-    status: "active",
-    createdAt: "Jan 01, 2024",
-  },
-  {
-    id: "2",
-    code: "CHEMISTRY-VIP",
-    testSeries: "Chemistry Chapter-wise Tests",
-    maxUses: 50,
-    usesLeft: 12,
-    expiry: "Jun 30, 2024",
-    status: "active",
-    createdAt: "Feb 15, 2024",
-  },
-  {
-    id: "3",
-    code: "BIO-TRIAL",
-    testSeries: "Biology NCERT Based",
-    maxUses: 25,
-    usesLeft: 0,
-    expiry: "Mar 15, 2024",
-    status: "exhausted",
-    createdAt: "Mar 01, 2024",
-  },
-  {
-    id: "4",
-    code: "JEE-DEMO",
-    testSeries: "JEE Maths Foundation",
-    maxUses: 10,
-    usesLeft: 8,
-    expiry: "Jan 01, 2024",
-    status: "expired",
-    createdAt: "Dec 01, 2023",
-  },
-];
+type ImportedTest = { id: string; title: string };
+
+function toDateLabel(ts?: Timestamp | null) {
+  if (!ts) return "—";
+  try {
+    return ts.toDate().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function toExpiryLabel(ts?: Timestamp | null) {
+  if (!ts) return "—";
+  try {
+    return ts.toDate().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function toEndOfDayTimestamp(yyyyMmDd: string) {
+  const [y, m, d] = yyyyMmDd.split("-").map((v) => parseInt(v, 10));
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, m - 1, d, 23, 59, 59, 999);
+  return Timestamp.fromDate(dt);
+}
+
+function isExpired(expiresAt?: Timestamp | null) {
+  if (!expiresAt) return false;
+  return expiresAt.toDate().getTime() < Date.now();
+}
+
+function isExpiringSoon(expiresAt?: Timestamp | null, days = 7) {
+  if (!expiresAt) return false;
+  const now = Date.now();
+  const t = expiresAt.toDate().getTime();
+  if (t < now) return false;
+  return t - now <= days * 24 * 60 * 60 * 1000;
+}
 
 export default function AccessCodes() {
+  const [uid, setUid] = useState<string | null>(null);
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
   const [newCode, setNewCode] = useState("");
-  const [hasData] = useState(true);
+  const [selectedTestSeriesId, setSelectedTestSeriesId] = useState<string>("");
+  const [maxUses, setMaxUses] = useState<string>("100");
+  const [expiryDate, setExpiryDate] = useState<string>("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [accessCodes, setAccessCodes] = useState<AccessCode[]>([]);
+  const [importedTests, setImportedTests] = useState<ImportedTest[]>([]);
+
+  // Auth
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  // Load imported tests (for dropdown)
+  useEffect(() => {
+    if (!uid) {
+      setImportedTests([]);
+      return;
+    }
+    const ref = collection(db, "educators", uid, "importedTests");
+    const q = query(ref, orderBy("createdAt", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: ImportedTest[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: String(data?.title || data?.name || "Untitled Test Series"),
+          };
+        });
+        setImportedTests(list);
+      },
+      () => {
+        setImportedTests([]);
+      }
+    );
+
+    return () => unsub();
+  }, [uid]);
+
+  // Load access codes
+  useEffect(() => {
+    if (!uid) {
+      setAccessCodes([]);
+      return;
+    }
+    const ref = collection(db, "educators", uid, "accessCodes");
+    const q = query(ref, orderBy("createdAt", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: AccessCode[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+
+          const max = Number(data?.maxUses || 0);
+          const used = Number(data?.usesUsed || 0);
+          const left = Math.max(0, max - used);
+
+          const expiresAt = (data?.expiresAt as Timestamp) || null;
+          const createdAt = (data?.createdAt as Timestamp) || null;
+
+          let status: "active" | "expired" | "exhausted" = "active";
+          if (left <= 0 && max > 0) status = "exhausted";
+          else if (isExpired(expiresAt)) status = "expired";
+
+          return {
+            id: d.id,
+            code: String(data?.code || d.id),
+            testSeries: String(data?.testSeriesTitle || "—"),
+            testSeriesId: String(data?.testSeriesId || ""),
+            maxUses: Number.isFinite(max) ? max : 0,
+            usesLeft: left,
+            expiry: toExpiryLabel(expiresAt),
+            status,
+            createdAt: toDateLabel(createdAt),
+            usesUsed: used,
+            expiresAtTs: expiresAt,
+          };
+        });
+
+        setAccessCodes(rows);
+      },
+      () => {
+        setAccessCodes([]);
+        toast({
+          title: "Failed to load access codes",
+          description: "Please try again.",
+          variant: "destructive",
+        });
+      }
+    );
+
+    return () => unsub();
+  }, [uid]);
+
+  const hasData = accessCodes.length > 0;
 
   const copyToClipboard = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -113,11 +242,164 @@ export default function AccessCodes() {
   const generateCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code = "";
-    for (let i = 0; i < 8; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
     setNewCode(code);
   };
+
+  const resetDialog = () => {
+    setEditingId(null);
+    setNewCode("");
+    setSelectedTestSeriesId("");
+    setMaxUses("100");
+    setExpiryDate("");
+  };
+
+  const openCreate = () => {
+    resetDialog();
+    setIsCreateOpen(true);
+  };
+
+  const openEdit = (item: AccessCode) => {
+    setEditingId(item.id);
+    setNewCode(item.code || item.id);
+    setSelectedTestSeriesId(item.testSeriesId || "");
+    setMaxUses(String(item.maxUses || 0));
+    setExpiryDate(item.expiresAtTs ? item.expiresAtTs.toDate().toISOString().slice(0, 10) : "");
+    setIsCreateOpen(true);
+  };
+
+  const handleDelete = async (item: AccessCode) => {
+    if (!uid) return;
+    const ok = window.confirm(`Delete access code "${item.code}"?`);
+    if (!ok) return;
+
+    try {
+      await deleteDoc(doc(db, "educators", uid, "accessCodes", item.id));
+      toast({ title: "Deleted", description: "Access code removed successfully." });
+    } catch {
+      toast({
+        title: "Delete failed",
+        description: "Could not delete the access code.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSave = async () => {
+    if (!uid) {
+      toast({
+        title: "Please login",
+        description: "You must be logged in as educator.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const codeUpper = String(newCode || "").trim().toUpperCase();
+    const max = Number(maxUses);
+
+    if (!selectedTestSeriesId) {
+      toast({ title: "Select test series", description: "Please choose a test series." });
+      return;
+    }
+    if (!codeUpper) {
+      toast({ title: "Enter code", description: "Please enter or generate an access code." });
+      return;
+    }
+    if (!Number.isFinite(max) || max <= 0) {
+      toast({ title: "Invalid max uses", description: "Max uses must be a positive number." });
+      return;
+    }
+
+    const testTitle =
+      importedTests.find((t) => t.id === selectedTestSeriesId)?.title || "Test Series";
+
+    const expiresAt = expiryDate ? toEndOfDayTimestamp(expiryDate) : null;
+
+    setIsSaving(true);
+    try {
+      if (!editingId) {
+        // Create new (use code as doc id for uniqueness)
+        const ref = doc(db, "educators", uid, "accessCodes", codeUpper);
+        const existing = await getDoc(ref);
+        if (existing.exists()) {
+          toast({
+            title: "Code already exists",
+            description: "Please generate a different code.",
+            variant: "destructive",
+          });
+          setIsSaving(false);
+          return;
+        }
+
+        await setDoc(ref, {
+          code: codeUpper,
+          testSeriesId: selectedTestSeriesId,
+          testSeriesTitle: testTitle,
+          maxUses: max,
+          usesUsed: 0,
+          expiresAt: expiresAt ?? null,
+          createdAt: serverTimestamp(),
+        });
+
+        toast({
+          title: "Access code created!",
+          description: "Your new access code is ready to share.",
+        });
+      } else {
+        // Update existing (editingId is doc id)
+        const ref = doc(db, "educators", uid, "accessCodes", editingId);
+
+        // safety: don't set maxUses below already used
+        const current = accessCodes.find((c) => c.id === editingId);
+        const used = current?.usesUsed || 0;
+        if (max < used) {
+          toast({
+            title: "Max uses too low",
+            description: `This code already used ${used} times.`,
+            variant: "destructive",
+          });
+          setIsSaving(false);
+          return;
+        }
+
+        await updateDoc(ref, {
+          testSeriesId: selectedTestSeriesId,
+          testSeriesTitle: testTitle,
+          maxUses: max,
+          expiresAt: expiresAt ?? null,
+          updatedAt: serverTimestamp(),
+        });
+
+        toast({ title: "Updated", description: "Access code updated successfully." });
+      }
+
+      setIsCreateOpen(false);
+      resetDialog();
+    } catch {
+      toast({
+        title: "Save failed",
+        description: "Could not save access code. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const expiringSoonCount = useMemo(() => {
+    return accessCodes.filter(
+      (c) => c.status === "active" && isExpiringSoon(c.expiresAtTs, 7)
+    ).length;
+  }, [accessCodes]);
+
+  const totalUses = useMemo(() => {
+    return accessCodes.reduce((acc, c) => acc + (c.maxUses - c.usesLeft), 0);
+  }, [accessCodes]);
+
+  const activeCount = useMemo(() => {
+    return accessCodes.filter((c) => c.status === "active").length;
+  }, [accessCodes]);
 
   const columns = [
     {
@@ -154,21 +436,22 @@ export default function AccessCodes() {
     {
       key: "uses",
       header: "Uses",
-      render: (item: AccessCode) => (
-        <div className="flex items-center gap-2">
-          <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full gradient-bg"
-              style={{
-                width: `${((item.maxUses - item.usesLeft) / item.maxUses) * 100}%`,
-              }}
-            />
+      render: (item: AccessCode) => {
+        const max = item.maxUses || 0;
+        const used = max - item.usesLeft;
+        const pct = max > 0 ? Math.min(100, Math.max(0, (used / max) * 100)) : 0;
+
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
+              <div className="h-full gradient-bg" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-sm text-muted-foreground">
+              {used}/{max}
+            </span>
           </div>
-          <span className="text-sm text-muted-foreground">
-            {item.maxUses - item.usesLeft}/{item.maxUses}
-          </span>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "expiry",
@@ -205,7 +488,12 @@ export default function AccessCodes() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                openEdit(item);
+              }}
+            >
               <Edit className="h-4 w-4 mr-2" />
               Edit
             </DropdownMenuItem>
@@ -218,7 +506,13 @@ export default function AccessCodes() {
               <Copy className="h-4 w-4 mr-2" />
               Copy Code
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(item);
+              }}
+            >
               <Trash2 className="h-4 w-4 mr-2" />
               Delete
             </DropdownMenuItem>
@@ -228,7 +522,7 @@ export default function AccessCodes() {
     },
   ];
 
-  if (!hasData) {
+  if (!uid) {
     return (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -241,10 +535,36 @@ export default function AccessCodes() {
         </div>
         <EmptyState
           icon={Key}
+          title="Please login as Educator"
+          description="You must be logged in to manage access codes."
+          actionLabel="Go to Login"
+          onAction={() => (window.location.href = "/login?role=educator")}
+        />
+      </div>
+    );
+  }
+
+  if (!hasData) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-display font-bold">Access Codes</h1>
+            <p className="text-muted-foreground text-sm">
+              Create and manage access codes for your test series
+            </p>
+          </div>
+          <Button className="gradient-bg text-white" onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Access Code
+          </Button>
+        </div>
+        <EmptyState
+          icon={Key}
           title="No access codes created yet"
           description="Create access codes to let students access your test series. Share the codes via WhatsApp, email, or any other platform."
           actionLabel="Create Access Code"
-          onAction={() => setIsCreateOpen(true)}
+          onAction={openCreate}
         />
       </div>
     );
@@ -260,33 +580,54 @@ export default function AccessCodes() {
             Create and manage access codes for your test series
           </p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+
+        <Dialog
+          open={isCreateOpen}
+          onOpenChange={(open) => {
+            setIsCreateOpen(open);
+            if (!open) resetDialog();
+          }}
+        >
           <DialogTrigger asChild>
-            <Button className="gradient-bg text-white">
+            <Button className="gradient-bg text-white" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />
               Create Access Code
             </Button>
           </DialogTrigger>
+
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Access Code</DialogTitle>
+              <DialogTitle>
+                {editingId ? "Edit Access Code" : "Create New Access Code"}
+              </DialogTitle>
             </DialogHeader>
+
             <div className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label>Test Series</Label>
-                <Select>
+                <Select
+                  value={selectedTestSeriesId}
+                  onValueChange={setSelectedTestSeriesId}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select test series" />
+                    <SelectValue
+                      placeholder={
+                        importedTests.length ? "Select test series" : "No imported tests yet"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="neet-physics">
-                      NEET Physics Complete Package
-                    </SelectItem>
-                    <SelectItem value="chemistry">
-                      Chemistry Chapter-wise Tests
-                    </SelectItem>
-                    <SelectItem value="biology">Biology NCERT Based</SelectItem>
-                    <SelectItem value="jee-maths">JEE Maths Foundation</SelectItem>
+                    {importedTests.length ? (
+                      importedTests.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.title}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="__none" disabled>
+                        Import a test series first
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -299,8 +640,9 @@ export default function AccessCodes() {
                     onChange={(e) => setNewCode(e.target.value.toUpperCase())}
                     placeholder="Enter or generate code"
                     className="font-mono uppercase"
+                    disabled={!!editingId}
                   />
-                  <Button variant="outline" onClick={generateCode}>
+                  <Button variant="outline" onClick={generateCode} disabled={!!editingId}>
                     Generate
                   </Button>
                 </div>
@@ -309,15 +651,24 @@ export default function AccessCodes() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Max Uses</Label>
-                  <Input type="number" placeholder="100" />
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={maxUses}
+                    onChange={(e) => setMaxUses(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Expiry Date</Label>
-                  <Input type="date" />
+                  <Input
+                    type="date"
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                  />
                 </div>
               </div>
 
-              {newCode && (
+              {newCode && !editingId && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -347,16 +698,10 @@ export default function AccessCodes() {
 
               <Button
                 className="w-full gradient-bg text-white"
-                onClick={() => {
-                  toast({
-                    title: "Access code created!",
-                    description: "Your new access code is ready to share.",
-                  });
-                  setIsCreateOpen(false);
-                  setNewCode("");
-                }}
+                onClick={handleSave}
+                disabled={isSaving}
               >
-                Create Access Code
+                {isSaving ? "Saving..." : editingId ? "Update Access Code" : "Create Access Code"}
               </Button>
             </div>
           </DialogContent>
@@ -367,21 +712,9 @@ export default function AccessCodes() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { icon: Key, label: "Total Codes", value: accessCodes.length },
-          {
-            icon: Users,
-            label: "Total Uses",
-            value: accessCodes.reduce((acc, c) => acc + c.maxUses - c.usesLeft, 0),
-          },
-          {
-            icon: Check,
-            label: "Active",
-            value: accessCodes.filter((c) => c.status === "active").length,
-          },
-          {
-            icon: Calendar,
-            label: "Expiring Soon",
-            value: 2,
-          },
+          { icon: Users, label: "Total Uses", value: totalUses },
+          { icon: Check, label: "Active", value: activeCount },
+          { icon: Calendar, label: "Expiring Soon", value: expiringSoonCount },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -409,3 +742,4 @@ export default function AccessCodes() {
     </div>
   );
 }
+

@@ -1,21 +1,21 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  MessageSquare,
+  Plus,
   Send,
+  Paperclip,
   Search,
-  MoreVertical,
   Clock,
   CheckCircle2,
   AlertCircle,
-  Plus,
-  MessageSquare,
+  Loader2,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -24,477 +24,582 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import EmptyState from "@/components/educator/EmptyState";
+import { toast } from "sonner";
+import { onAuthStateChanged } from "firebase/auth";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+  Timestamp,
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  limit,
+} from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
-interface Message {
+type TicketStatus = "open" | "pending" | "resolved";
+
+type Ticket = {
   id: string;
-  sender: string;
-  avatar: string;
-  preview: string;
-  time: string;
-  unread: boolean;
+  subject: string;
+  status: TicketStatus;
+  createdAtTs?: Timestamp | null;
+  updatedAtTs?: Timestamp | null;
+  lastMessagePreview?: string;
+};
+
+type ChatMessage = {
+  id: string;
+  text: string;
+  sender: "educator" | "admin";
+  createdAtTs?: Timestamp | null;
+};
+
+function fmtTime(ts?: Timestamp | null) {
+  if (!ts) return "";
+  try {
+    return ts.toDate().toLocaleString(undefined, {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
 }
 
-interface ChatMessage {
-  id: string;
-  sender: "user" | "educator";
-  content: string;
-  time: string;
+function statusBadge(status: TicketStatus) {
+  if (status === "resolved") {
+    return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+  }
+  if (status === "pending") {
+    return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+  }
+  return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
 }
-
-interface Ticket {
-  id: string;
-  title: string;
-  status: "open" | "in-progress" | "resolved";
-  createdAt: string;
-  lastUpdate: string;
-  messages: { content: string; author: string; time: string }[];
-}
-
-const conversations: Message[] = [
-  {
-    id: "1",
-    sender: "Rahul Sharma",
-    avatar: "rahul",
-    preview: "Sir, I have a doubt in Physics Chapter 5...",
-    time: "2 min ago",
-    unread: true,
-  },
-  {
-    id: "2",
-    sender: "Priya Patel",
-    avatar: "priya",
-    preview: "Thank you for the feedback on my test!",
-    time: "1 hour ago",
-    unread: true,
-  },
-  {
-    id: "3",
-    sender: "Amit Kumar",
-    avatar: "amit",
-    preview: "When is the next mock test scheduled?",
-    time: "3 hours ago",
-    unread: false,
-  },
-  {
-    id: "4",
-    sender: "Sneha Gupta",
-    avatar: "sneha",
-    preview: "I'm having trouble accessing the test series",
-    time: "Yesterday",
-    unread: false,
-  },
-];
-
-const chatMessages: ChatMessage[] = [
-  {
-    id: "1",
-    sender: "user",
-    content: "Sir, I have a doubt in Physics Chapter 5. The question about projectile motion is confusing.",
-    time: "10:30 AM",
-  },
-  {
-    id: "2",
-    sender: "educator",
-    content: "Hi Rahul! Which specific part is confusing? Is it about the horizontal or vertical component?",
-    time: "10:32 AM",
-  },
-  {
-    id: "3",
-    sender: "user",
-    content: "The vertical component. I don't understand how to calculate the maximum height.",
-    time: "10:35 AM",
-  },
-  {
-    id: "4",
-    sender: "educator",
-    content: "Great question! At maximum height, the vertical velocity becomes zero. Use v² = u² - 2gh where v=0 at max height. This gives h = u²sin²θ / 2g. Would you like me to solve a similar problem?",
-    time: "10:38 AM",
-  },
-];
-
-const tickets: Ticket[] = [
-  {
-    id: "1",
-    title: "Unable to download test results PDF",
-    status: "open",
-    createdAt: "Jun 10, 2024",
-    lastUpdate: "2 hours ago",
-    messages: [
-      { content: "I'm trying to download my test results but the PDF is not generating.", author: "You", time: "Jun 10, 2024" },
-    ],
-  },
-  {
-    id: "2",
-    title: "Request for additional test series",
-    status: "in-progress",
-    createdAt: "Jun 8, 2024",
-    lastUpdate: "1 day ago",
-    messages: [
-      { content: "Can you add more JEE Advanced level problems?", author: "You", time: "Jun 8, 2024" },
-      { content: "We're working on adding new content. Should be ready by next week.", author: "Support", time: "Jun 9, 2024" },
-    ],
-  },
-  {
-    id: "3",
-    title: "Billing issue with subscription",
-    status: "resolved",
-    createdAt: "Jun 1, 2024",
-    lastUpdate: "Jun 5, 2024",
-    messages: [
-      { content: "I was charged twice for my subscription.", author: "You", time: "Jun 1, 2024" },
-      { content: "We've processed a refund for the duplicate charge. Please allow 5-7 business days.", author: "Support", time: "Jun 3, 2024" },
-      { content: "Refund received. Thank you!", author: "You", time: "Jun 5, 2024" },
-    ],
-  },
-];
 
 export default function Messages() {
-  const [selectedConversation, setSelectedConversation] = useState<Message | null>(
-    conversations[0]
-  );
-  const [messageInput, setMessageInput] = useState("");
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [uid, setUid] = useState<string | null>(null);
 
-  const statusColors = {
-    open: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    "in-progress": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    resolved: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  };
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
-  const statusIcons = {
-    open: AlertCircle,
-    "in-progress": Clock,
-    resolved: CheckCircle2,
-  };
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [msgText, setMsgText] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [isNewOpen, setIsNewOpen] = useState(false);
+
+  const [newSubject, setNewSubject] = useState("");
+  const [newMessage, setNewMessage] = useState("");
+
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  // Auth
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  // Tickets list (realtime)
+  useEffect(() => {
+    if (!uid) {
+      setTickets([]);
+      setSelectedTicketId(null);
+      setLoadingTickets(false);
+      return;
+    }
+
+    setLoadingTickets(true);
+
+    const ref = collection(db, "educators", uid, "supportTickets");
+    const q = query(ref, orderBy("updatedAt", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: Ticket[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            subject: String(data?.subject || "Support Ticket"),
+            status: (data?.status || "open") as TicketStatus,
+            createdAtTs: (data?.createdAt as Timestamp) || null,
+            updatedAtTs: (data?.updatedAt as Timestamp) || null,
+            lastMessagePreview: String(data?.lastMessagePreview || ""),
+          };
+        });
+
+        setTickets(list);
+
+        // auto-select first ticket if none selected
+        if (!selectedTicketId && list.length) {
+          setSelectedTicketId(list[0].id);
+        }
+
+        setLoadingTickets(false);
+      },
+      () => {
+        toast.error("Failed to load tickets");
+        setTickets([]);
+        setLoadingTickets(false);
+      }
+    );
+
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  // Messages list (realtime) for selected ticket
+  useEffect(() => {
+    if (!uid || !selectedTicketId) {
+      setMessages([]);
+      setLoadingMessages(false);
+      return;
+    }
+
+    setLoadingMessages(true);
+
+    const ref = collection(
+      db,
+      "educators",
+      uid,
+      "supportTickets",
+      selectedTicketId,
+      "messages"
+    );
+    const q = query(ref, orderBy("createdAt", "asc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: ChatMessage[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            text: String(data?.text || ""),
+            sender: (data?.sender || "educator") as "educator" | "admin",
+            createdAtTs: (data?.createdAt as Timestamp) || null,
+          };
+        });
+        setMessages(list);
+        setLoadingMessages(false);
+      },
+      () => {
+        toast.error("Failed to load messages");
+        setMessages([]);
+        setLoadingMessages(false);
+      }
+    );
+
+    return () => unsub();
+  }, [uid, selectedTicketId]);
+
+  const filteredTickets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return tickets;
+    return tickets.filter((t) => {
+      return (
+        t.subject.toLowerCase().includes(q) ||
+        (t.lastMessagePreview || "").toLowerCase().includes(q)
+      );
+    });
+  }, [tickets, search]);
+
+  const selectedTicket = useMemo(() => {
+    if (!selectedTicketId) return null;
+    return tickets.find((t) => t.id === selectedTicketId) || null;
+  }, [tickets, selectedTicketId]);
+
+  async function createTicket() {
+    if (!uid) return;
+
+    const subject = newSubject.trim();
+    const firstMsg = newMessage.trim();
+
+    if (!subject) {
+      toast.error("Please enter a subject");
+      return;
+    }
+    if (!firstMsg) {
+      toast.error("Please enter your message");
+      return;
+    }
+
+    try {
+      setSending(true);
+
+      // create ticket doc
+      const ticketRef = await addDoc(
+        collection(db, "educators", uid, "supportTickets"),
+        {
+          subject,
+          status: "open",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          lastMessagePreview: firstMsg.slice(0, 140),
+        }
+      );
+
+      // add first message
+      await addDoc(
+        collection(
+          db,
+          "educators",
+          uid,
+          "supportTickets",
+          ticketRef.id,
+          "messages"
+        ),
+        {
+          text: firstMsg,
+          sender: "educator",
+          createdAt: serverTimestamp(),
+        }
+      );
+
+      setIsNewOpen(false);
+      setNewSubject("");
+      setNewMessage("");
+      setSelectedTicketId(ticketRef.id);
+      toast.success("Ticket created");
+    } catch {
+      toast.error("Could not create ticket");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendMessage() {
+    if (!uid || !selectedTicketId) return;
+
+    const text = msgText.trim();
+    if (!text) return;
+
+    try {
+      setSending(true);
+
+      await addDoc(
+        collection(
+          db,
+          "educators",
+          uid,
+          "supportTickets",
+          selectedTicketId,
+          "messages"
+        ),
+        {
+          text,
+          sender: "educator",
+          createdAt: serverTimestamp(),
+        }
+      );
+
+      // update ticket preview + timestamp
+      await updateDoc(
+        doc(db, "educators", uid, "supportTickets", selectedTicketId),
+        {
+          updatedAt: serverTimestamp(),
+          lastMessagePreview: text.slice(0, 140),
+          // optional: status back to open when educator sends
+          status: "open",
+        }
+      );
+
+      setMsgText("");
+    } catch {
+      toast.error("Could not send message");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!uid && !loadingTickets) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-display font-bold">Messages / Support</h1>
+          <p className="text-muted-foreground text-sm">
+            Chat with support and manage your tickets
+          </p>
+        </div>
+        <EmptyState
+          icon={MessageSquare}
+          title="Please login as Educator"
+          description="You must be logged in to access support messages."
+          actionLabel="Go to Login"
+          onAction={() => (window.location.href = "/login?role=educator")}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold">Messages & Support</h1>
+          <h1 className="text-2xl font-display font-bold">Messages / Support</h1>
           <p className="text-muted-foreground text-sm">
-            Communicate with students and get help from support
+            Chat with support and manage your tickets
           </p>
         </div>
+
+        <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
+          <DialogTrigger asChild>
+            <Button className="gradient-bg text-white">
+              <Plus className="h-4 w-4 mr-2" />
+              New Ticket
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Create Support Ticket</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 mt-2">
+              <div className="space-y-2">
+                <Label>Subject</Label>
+                <Input
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  placeholder="E.g. Payment issue / Website generation / Test series"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Message</Label>
+                <Textarea
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Describe your issue..."
+                  className="min-h-[120px]"
+                />
+              </div>
+
+              <Button
+                className="w-full gradient-bg text-white"
+                onClick={createTicket}
+                disabled={sending}
+              >
+                {sending ? "Creating..." : "Create Ticket"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <Tabs defaultValue="students" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="students" className="relative">
-            Student Messages
-            <Badge className="ml-2 bg-primary text-primary-foreground text-xs">3</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="support">Contact Support</TabsTrigger>
-        </TabsList>
+      {/* Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Tickets List */}
+        <Card className="lg:col-span-1 card-soft border-0">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Tickets
+            </CardTitle>
 
-        <TabsContent value="students" className="space-y-0">
-          <Card className="overflow-hidden">
-            <div className="grid grid-cols-1 lg:grid-cols-3 min-h-[600px]">
-              {/* Conversations List */}
-              <div className="border-r border-border">
-                <div className="p-4 border-b border-border">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search conversations..." className="pl-9" />
-                  </div>
-                </div>
-                <div className="divide-y divide-border">
-                  {conversations.map((conv) => (
-                    <div
-                      key={conv.id}
-                      onClick={() => setSelectedConversation(conv)}
-                      className={cn(
-                        "p-4 cursor-pointer transition-colors hover:bg-muted/50",
-                        selectedConversation?.id === conv.id && "bg-muted"
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="relative">
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage
-                              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${conv.avatar}`}
-                            />
-                            <AvatarFallback>{conv.sender[0]}</AvatarFallback>
-                          </Avatar>
-                          {conv.unread && (
-                            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full border-2 border-card" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p
-                              className={cn(
-                                "text-sm truncate",
-                                conv.unread ? "font-semibold" : "font-medium"
-                              )}
-                            >
-                              {conv.sender}
-                            </p>
-                            <span className="text-xs text-muted-foreground">
-                              {conv.time}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {conv.preview}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            <div className="relative mt-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tickets..."
+                className="pl-9 rounded-xl"
+              />
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-2 max-h-[65vh] overflow-auto pr-1">
+            {loadingTickets ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading tickets...
               </div>
-
-              {/* Chat Area */}
-              <div className="lg:col-span-2 flex flex-col">
-                {selectedConversation ? (
-                  <>
-                    {/* Chat Header */}
-                    <div className="p-4 border-b border-border flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage
-                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConversation.avatar}`}
-                          />
-                          <AvatarFallback>
-                            {selectedConversation.sender[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">
-                            {selectedConversation.sender}
-                          </p>
-                          <p className="text-xs text-green-500">Online</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    {/* Messages */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                      {chatMessages.map((msg) => (
-                        <motion.div
-                          key={msg.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className={cn(
-                            "flex",
-                            msg.sender === "educator" ? "justify-end" : "justify-start"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "max-w-[80%] rounded-2xl px-4 py-2",
-                              msg.sender === "educator"
-                                ? "gradient-bg text-white rounded-br-sm"
-                                : "bg-muted rounded-bl-sm"
-                            )}
-                          >
-                            <p className="text-sm">{msg.content}</p>
-                            <p
-                              className={cn(
-                                "text-[10px] mt-1",
-                                msg.sender === "educator"
-                                  ? "text-white/70"
-                                  : "text-muted-foreground"
-                              )}
-                            >
-                              {msg.time}
-                            </p>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-
-                    {/* Input */}
-                    <div className="p-4 border-t border-border">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Type your message..."
-                          value={messageInput}
-                          onChange={(e) => setMessageInput(e.target.value)}
-                          className="flex-1"
-                        />
-                        <Button className="gradient-bg text-white">
-                          <Send className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center">
-                    <div className="text-center">
-                      <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                      <p className="text-muted-foreground">
-                        Select a conversation to start messaging
+            ) : filteredTickets.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-10 text-center">
+                No tickets found.
+              </div>
+            ) : (
+              filteredTickets.map((t, idx) => (
+                <motion.button
+                  key={t.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  onClick={() => setSelectedTicketId(t.id)}
+                  className={cn(
+                    "w-full text-left p-3 rounded-xl border transition-all",
+                    selectedTicketId === t.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{t.subject}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
+                        {t.lastMessagePreview || "No messages yet"}
                       </p>
                     </div>
+                    <Badge variant="secondary" className={statusBadge(t.status)}>
+                      {t.status}
+                    </Badge>
                   </div>
+                  <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    <span>{fmtTime(t.updatedAtTs || t.createdAtTs || null)}</span>
+                  </div>
+                </motion.button>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Chat Panel */}
+        <Card className="lg:col-span-2 card-soft border-0">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-base">
+                  {selectedTicket ? selectedTicket.subject : "Select a ticket"}
+                </CardTitle>
+                {selectedTicket && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Status:{" "}
+                    <span className="font-medium">{selectedTicket.status}</span>
+                    {" • "}
+                    Updated: {fmtTime(selectedTicket.updatedAtTs || null)}
+                  </p>
                 )}
               </div>
+              {selectedTicket && (
+                <Badge variant="secondary" className={statusBadge(selectedTicket.status)}>
+                  {selectedTicket.status === "resolved" ? (
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                  ) : selectedTicket.status === "pending" ? (
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                  ) : (
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                  )}
+                  {selectedTicket.status}
+                </Badge>
+              )}
             </div>
-          </Card>
-        </TabsContent>
+          </CardHeader>
 
-        <TabsContent value="support" className="space-y-4">
-          <div className="flex justify-end">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="gradient-bg text-white">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Ticket
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Support Ticket</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="technical">Technical Issue</SelectItem>
-                        <SelectItem value="billing">Billing</SelectItem>
-                        <SelectItem value="content">Content Request</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Subject</Label>
-                    <Input placeholder="Brief description of your issue" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Textarea
-                      placeholder="Provide detailed information about your issue..."
-                      rows={4}
-                    />
-                  </div>
-                  <Button className="w-full gradient-bg text-white">
-                    Submit Ticket
-                  </Button>
+          <CardContent className="flex flex-col h-[65vh]">
+            {/* Messages */}
+            <div className="flex-1 overflow-auto pr-1 space-y-3">
+              {!selectedTicket ? (
+                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                  Select a ticket to view messages.
                 </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Tickets List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Your Tickets</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y divide-border">
-                  {tickets.map((ticket) => {
-                    const StatusIcon = statusIcons[ticket.status];
-                    return (
+              ) : loadingMessages ? (
+                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading messages...
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                  No messages yet.
+                </div>
+              ) : (
+                messages.map((m) => {
+                  const mine = m.sender === "educator";
+                  return (
+                    <div
+                      key={m.id}
+                      className={cn("flex", mine ? "justify-end" : "justify-start")}
+                    >
                       <div
-                        key={ticket.id}
-                        onClick={() => setSelectedTicket(ticket)}
                         className={cn(
-                          "p-4 cursor-pointer transition-colors hover:bg-muted/50",
-                          selectedTicket?.id === ticket.id && "bg-muted"
+                          "max-w-[80%] rounded-2xl px-4 py-3 text-sm border",
+                          mine
+                            ? "bg-primary text-primary-foreground border-primary/20"
+                            : "bg-card border-border"
                         )}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">
-                              {ticket.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Created {ticket.createdAt}
-                            </p>
-                          </div>
-                          <Badge className={statusColors[ticket.status]}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {ticket.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Ticket Details */}
-            <Card>
-              {selectedTicket ? (
-                <>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-base">
-                          {selectedTicket.title}
-                        </CardTitle>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Last update: {selectedTicket.lastUpdate}
-                        </p>
-                      </div>
-                      <Badge className={statusColors[selectedTicket.status]}>
-                        {selectedTicket.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-4">
-                      {selectedTicket.messages.map((msg, index) => (
-                        <div
-                          key={index}
+                        <p className="whitespace-pre-wrap">{m.text}</p>
+                        <p
                           className={cn(
-                            "p-3 rounded-lg",
-                            msg.author === "Support"
-                              ? "bg-primary/10 ml-4"
-                              : "bg-muted mr-4"
+                            "text-[11px] mt-2 opacity-80",
+                            mine ? "text-primary-foreground/80" : "text-muted-foreground"
                           )}
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium">{msg.author}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {msg.time}
-                            </span>
-                          </div>
-                          <p className="text-sm">{msg.content}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {selectedTicket.status !== "resolved" && (
-                      <div className="pt-4 border-t border-border">
-                        <Textarea placeholder="Add a reply..." rows={3} />
-                        <Button className="mt-2 gradient-bg text-white">
-                          Send Reply
-                        </Button>
+                          {fmtTime(m.createdAtTs || null)}
+                        </p>
                       </div>
-                    )}
-                  </CardContent>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-64">
-                  <p className="text-muted-foreground">Select a ticket to view details</p>
-                </div>
+                    </div>
+                  );
+                })
               )}
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+            </div>
+
+            {/* Composer */}
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="flex items-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="rounded-xl"
+                  onClick={() => toast.info("Attachments coming next")}
+                  disabled={!selectedTicketId}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <div className="flex-1">
+                  <Textarea
+                    value={msgText}
+                    onChange={(e) => setMsgText(e.target.value)}
+                    placeholder={selectedTicketId ? "Type your message..." : "Select a ticket first..."}
+                    className="min-h-[44px] max-h-32 rounded-2xl"
+                    disabled={!selectedTicketId || sending}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  className="gradient-bg text-white rounded-xl"
+                  onClick={sendMessage}
+                  disabled={!selectedTicketId || sending || !msgText.trim()}
+                >
+                  {sending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Send
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                Tip: Press Enter to send, Shift+Enter for new line.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
+
+// Local label import (keeps shadcn style)
+function Label(props: { children: any }) {
+  return <div className="text-sm font-medium">{props.children}</div>;
+}
+

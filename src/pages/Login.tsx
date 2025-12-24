@@ -1,13 +1,14 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight, GraduationCap, Building2 } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Upload, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
-export default function Login() {
+export default function Signup() {
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role");
   const [role, setRole] = useState<"educator" | "student">(
@@ -15,24 +16,55 @@ export default function Login() {
   );
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedTerms) {
+      toast.error("Please accept the terms and conditions");
+      return;
+    }
     setIsLoading(true);
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    toast.success("Login successful! Redirecting...");
+    toast.success("Account created! Redirecting to onboarding...");
     setIsLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Left - Form */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      {/* Left - Visual */}
+      <div className="hidden lg:flex flex-1 relative overflow-hidden">
+        <div className="absolute inset-0 gradient-bg" />
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
+            backgroundSize: "32px 32px",
+          }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center p-12">
+          <div className="text-center text-white max-w-md">
+            <h2 className="text-4xl font-display font-bold mb-6">
+              {role === "educator"
+                ? "Launch Your Website in 6 Hours"
+                : "Start Your Exam Prep Today"}
+            </h2>
+            <p className="text-lg text-white/80">
+              {role === "educator"
+                ? "AI-powered websites and management tools for modern coaching institutes."
+                : "Access thousands of practice tests and track your progress with AI analytics."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Right - Form */}
+      <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
+          className="w-full max-w-md py-8"
         >
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 mb-8">
@@ -45,9 +77,11 @@ export default function Login() {
             </span>
           </Link>
 
-          <h1 className="text-3xl font-display font-bold mb-2">Welcome back</h1>
+          <h1 className="text-3xl font-display font-bold mb-2">Create your account</h1>
           <p className="text-muted-foreground mb-8">
-            Sign in to continue to your dashboard
+            {role === "educator"
+              ? "Start your 14-day free trial"
+              : "Join your coaching and start practicing"}
           </p>
 
           {/* Role Selector */}
@@ -80,31 +114,85 @@ export default function Login() {
             </button>
           </div>
 
-          {/* Login Form */}
+          {/* Registration Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">Email or Phone</Label>
+              <Label htmlFor="name">Full Name *</Label>
               <Input
-                id="email"
+                id="name"
                 type="text"
-                placeholder="your@email.com"
+                placeholder="Your full name"
                 className="h-12"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link to="/forgot-password" className="text-sm text-brand-blue hover:underline">
-                  Forgot password?
-                </Link>
+              <Label htmlFor="email">Email Address *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your@email.com"
+                className="h-12"
+                required
+              />
+            </div>
+
+            {role === "educator" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="coachingName">Coaching/Institute Name *</Label>
+                  <Input
+                    id="coachingName"
+                    type="text"
+                    placeholder="Your coaching name"
+                    className="h-12"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="city">City *</Label>
+                  <Input
+                    id="city"
+                    type="text"
+                    placeholder="Your city"
+                    className="h-12"
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {role === "student" && (
+              <div className="space-y-2">
+                <Label htmlFor="coachingCode">Coaching Access Code (Optional)</Label>
+                <Input
+                  id="coachingCode"
+                  type="text"
+                  placeholder="Enter code if you have one"
+                  className="h-12"
+                />
               </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+91 98765 43210"
+                className="h-12"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password *</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="Create a strong password"
                   className="h-12 pr-12"
                   required
                 />
@@ -118,6 +206,37 @@ export default function Login() {
               </div>
             </div>
 
+            {role === "educator" && (
+              <div className="space-y-2">
+                <Label>Logo (Optional)</Label>
+                <div className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-brand-start/50 transition-colors cursor-pointer">
+                  <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Drag & drop or click to upload
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Terms */}
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="terms"
+                checked={acceptedTerms}
+                onCheckedChange={(checked) => setAcceptedTerms(checked as boolean)}
+              />
+              <label htmlFor="terms" className="text-sm text-muted-foreground leading-relaxed">
+                I agree to the{" "}
+                <Link to="/terms" className="text-brand-blue hover:underline">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link to="/privacy" className="text-brand-blue hover:underline">
+                  Privacy Policy
+                </Link>
+              </label>
+            </div>
+
             <Button
               type="submit"
               variant="hero"
@@ -126,10 +245,10 @@ export default function Login() {
               disabled={isLoading}
             >
               {isLoading ? (
-                "Signing in..."
+                "Creating account..."
               ) : (
                 <>
-                  Sign In
+                  Create Account
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
@@ -146,7 +265,7 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Social Login */}
+          {/* Social Signup */}
           <Button variant="outline" className="w-full h-12" type="button">
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
@@ -169,36 +288,14 @@ export default function Login() {
             Continue with Google
           </Button>
 
-          {/* Sign Up Link */}
+          {/* Login Link */}
           <p className="text-center text-muted-foreground mt-8">
-            Don't have an account?{" "}
-            <Link to={`/signup?role=${role}`} className="text-brand-blue hover:underline font-medium">
-              Sign up
+            Already have an account?{" "}
+            <Link to={`/login?role=${role}`} className="text-brand-blue hover:underline font-medium">
+              Sign in
             </Link>
           </p>
         </motion.div>
-      </div>
-
-      {/* Right - Visual */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden">
-        <div className="absolute inset-0 gradient-bg" />
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-            backgroundSize: "32px 32px",
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center p-12">
-          <div className="text-center text-white max-w-md">
-            <h2 className="text-4xl font-display font-bold mb-6">
-              Transform Your Coaching with AI
-            </h2>
-            <p className="text-lg text-white/80">
-              Join 500+ coaching institutes already using UNIV.LIVE to manage students and grow their business.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
