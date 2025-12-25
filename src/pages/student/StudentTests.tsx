@@ -31,7 +31,7 @@ type Test = {
   id: string;
   title: string;
   subject: string;
-  duration: number; // minutes
+  duration: number;
   questionsCount: number;
   difficulty: "Easy" | "Medium" | "Hard";
   isLocked: boolean;
@@ -154,7 +154,7 @@ export default function StudentTests() {
     return () => unsub();
   }, [canLoad, educatorId, firebaseUser]);
 
-  // 3) Load tests from educators/{educatorId}/my_tests
+  // 3) Load tests
   useEffect(() => {
     if (!canLoad) {
       setLoading(authLoading || tenantLoading);
@@ -210,9 +210,9 @@ export default function StudentTests() {
 
           const syllabus = Array.isArray(data?.syllabus) ? data.syllabus.map(String) : [];
 
-          // lock logic: paid tests locked unless unlocked
+          // ✅ NEW RULE: EVERYTHING locked unless unlocked via access code
           const unlocked = unlockedSet.has(d.id);
-          const isLocked = price > 0 && !unlocked;
+          const isLocked = !unlocked;
 
           return {
             id: d.id,
@@ -259,10 +259,27 @@ export default function StudentTests() {
     });
   }, [tests, search, selectedSubject, selectedDifficulty]);
 
+  const selectedTest = useMemo(() => {
+    if (!selectedTestId) return null;
+    return tests.find((t) => t.id === selectedTestId) || null;
+  }, [selectedTestId, tests]);
+
   const handleUnlock = (testId: string) => {
     setSelectedTestId(testId);
     setAccessCode("");
     setUnlockDialogOpen(true);
+  };
+
+  const safeNavigateView = (testId: string) => {
+    const t = tests.find((x) => x.id === testId);
+    if (t?.isLocked) return handleUnlock(testId);
+    navigate(`/student/tests/${testId}`);
+  };
+
+  const safeNavigateStart = (testId: string) => {
+    const t = tests.find((x) => x.id === testId);
+    if (t?.isLocked) return handleUnlock(testId);
+    navigate(`/student/tests/${testId}/attempt`);
   };
 
   const handleRedeemCode = async () => {
@@ -282,14 +299,11 @@ export default function StudentTests() {
 
       await runTransaction(db, async (tx) => {
         const codeSnap = await tx.get(codeRef);
-        if (!codeSnap.exists()) {
-          throw new Error("Invalid code");
-        }
+        if (!codeSnap.exists()) throw new Error("Invalid code");
 
         const codeData = codeSnap.data() as any;
         const testSeriesId = String(codeData?.testSeriesId || "");
 
-        // 🔒 Code must match the selected test
         if (!testSeriesId || testSeriesId !== selectedTestId) {
           throw new Error("Code does not match this test");
         }
@@ -298,18 +312,11 @@ export default function StudentTests() {
         const usesUsed = safeNum(codeData?.usesUsed, 0);
         const expiresAt = codeData?.expiresAt ?? null;
 
-        if (maxUses > 0 && usesUsed >= maxUses) {
-          throw new Error("Code exhausted");
-        }
-        if (isExpired(expiresAt)) {
-          throw new Error("Code expired");
-        }
+        if (maxUses > 0 && usesUsed >= maxUses) throw new Error("Code exhausted");
+        if (isExpired(expiresAt)) throw new Error("Code expired");
 
         const alreadyUnlocked = await tx.get(unlockRef);
-        if (alreadyUnlocked.exists()) {
-          // already unlocked -> don't increment uses again
-          return;
-        }
+        if (alreadyUnlocked.exists()) return;
 
         tx.set(unlockRef, {
           studentId: firebaseUser.uid,
@@ -340,17 +347,12 @@ export default function StudentTests() {
     }
   };
 
-  const selectedTest = useMemo(() => {
-    if (!selectedTestId) return null;
-    return tests.find((t) => t.id === selectedTestId) || null;
-  }, [selectedTestId, tests]);
-
   if (loading) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Available Tests</h1>
-          <p className="text-muted-foreground">Browse and start your test preparation</p>
+          <p className="text-muted-foreground">All tests require an access code</p>
         </div>
         <div className="rounded-xl border border-border p-6 text-muted-foreground">Loading tests…</div>
       </div>
@@ -362,7 +364,7 @@ export default function StudentTests() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Available Tests</h1>
-          <p className="text-muted-foreground">Browse and start your test preparation</p>
+          <p className="text-muted-foreground">All tests require an access code</p>
         </div>
         <div className="rounded-xl border border-border p-6 text-muted-foreground">
           You must be logged in as a student and linked to a coaching (educator).
@@ -375,7 +377,7 @@ export default function StudentTests() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Available Tests</h1>
-        <p className="text-muted-foreground">Browse and start your test preparation</p>
+        <p className="text-muted-foreground">All tests are locked until you enter an access code.</p>
       </div>
 
       {/* Filters */}
@@ -391,7 +393,6 @@ export default function StudentTests() {
             />
           </div>
 
-          {/* Difficulty quick filter */}
           <div className="flex gap-2 overflow-x-auto pb-2">
             {DIFFICULTIES.map((d) => (
               <Badge
@@ -431,8 +432,8 @@ export default function StudentTests() {
             <TestCard
               key={test.id}
               test={test as any}
-              onView={(id) => navigate(`/student/tests/${id}`)}
-              onStart={(id) => navigate(`/student/tests/${id}/attempt`)}
+              onView={(id) => safeNavigateView(id)}
+              onStart={(id) => safeNavigateStart(id)}
               onUnlock={handleUnlock}
             />
           ))}
@@ -445,7 +446,7 @@ export default function StudentTests() {
           <DialogHeader>
             <DialogTitle>Unlock Test</DialogTitle>
             <DialogDescription>
-              Enter an access code or pay online to unlock this test.
+              Payment is upcoming. For now, only access code unlock works.
             </DialogDescription>
           </DialogHeader>
 
@@ -454,8 +455,8 @@ export default function StudentTests() {
               <TabsTrigger value="code" className="rounded-lg">
                 Access Code
               </TabsTrigger>
-              <TabsTrigger value="pay" className="rounded-lg">
-                Pay Online
+              <TabsTrigger value="pay" className="rounded-lg" disabled>
+                Pay Online (Upcoming)
               </TabsTrigger>
             </TabsList>
 
@@ -475,21 +476,20 @@ export default function StudentTests() {
               </Button>
 
               <p className="text-xs text-muted-foreground">
-                Code must be created by the educator in <span className="font-medium">Access Codes</span>.
+                Ask your educator for the access code (created in <span className="font-medium">Educator → Access Codes</span>).
               </p>
             </TabsContent>
 
             <TabsContent value="pay" className="space-y-4 pt-4">
-              <div className="text-center p-4 bg-pastel-mint rounded-xl">
-                <p className="text-2xl font-bold">₹{selectedTest?.price || 0}</p>
-                <p className="text-sm text-muted-foreground">One-time payment</p>
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-muted-foreground">
+                Payment integration is coming soon.
               </div>
-              <Button
-                className="w-full gradient-bg rounded-xl"
-                onClick={() => toast.info("Payment integration coming soon!")}
-              >
-                Pay Now
+              <Button className="w-full rounded-xl" variant="outline" disabled>
+                Pay Now (Upcoming)
               </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                For now, please use access code.
+              </p>
             </TabsContent>
           </Tabs>
         </DialogContent>

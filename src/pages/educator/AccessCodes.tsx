@@ -71,7 +71,7 @@ interface AccessCode {
   expiresAtTs?: Timestamp | null;
 }
 
-type ImportedTest = { id: string; title: string };
+type TestSeriesOption = { id: string; title: string };
 
 function toDateLabel(ts?: Timestamp | null) {
   if (!ts) return "—";
@@ -134,7 +134,7 @@ export default function AccessCodes() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [accessCodes, setAccessCodes] = useState<AccessCode[]>([]);
-  const [importedTests, setImportedTests] = useState<ImportedTest[]>([]);
+  const [testSeriesOptions, setTestSeriesOptions] = useState<TestSeriesOption[]>([]);
 
   // Auth
   useEffect(() => {
@@ -142,30 +142,29 @@ export default function AccessCodes() {
     return () => unsub();
   }, []);
 
-  // Load imported tests (for dropdown)
+  // ✅ Load test series from the SAME place students read: educators/{uid}/my_tests
   useEffect(() => {
     if (!uid) {
-      setImportedTests([]);
+      setTestSeriesOptions([]);
       return;
     }
-    const ref = collection(db, "educators", uid, "importedTests");
+
+    const ref = collection(db, "educators", uid, "my_tests");
     const q = query(ref, orderBy("createdAt", "desc"));
 
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const list: ImportedTest[] = snap.docs.map((d) => {
+        const list: TestSeriesOption[] = snap.docs.map((d) => {
           const data = d.data() as any;
           return {
             id: d.id,
-            title: String(data?.title || data?.name || "Untitled Test Series"),
+            title: String(data?.title || "Untitled Test Series"),
           };
         });
-        setImportedTests(list);
+        setTestSeriesOptions(list);
       },
-      () => {
-        setImportedTests([]);
-      }
+      () => setTestSeriesOptions([])
     );
 
     return () => unsub();
@@ -312,7 +311,7 @@ export default function AccessCodes() {
     }
 
     const testTitle =
-      importedTests.find((t) => t.id === selectedTestSeriesId)?.title || "Test Series";
+      testSeriesOptions.find((t) => t.id === selectedTestSeriesId)?.title || "Test Series";
 
     const expiresAt = expiryDate ? toEndOfDayTimestamp(expiryDate) : null;
 
@@ -334,7 +333,7 @@ export default function AccessCodes() {
 
         await setDoc(ref, {
           code: codeUpper,
-          testSeriesId: selectedTestSeriesId,
+          testSeriesId: selectedTestSeriesId,      // ✅ matches my_tests doc id
           testSeriesTitle: testTitle,
           maxUses: max,
           usesUsed: 0,
@@ -347,10 +346,8 @@ export default function AccessCodes() {
           description: "Your new access code is ready to share.",
         });
       } else {
-        // Update existing (editingId is doc id)
         const ref = doc(db, "educators", uid, "accessCodes", editingId);
 
-        // safety: don't set maxUses below already used
         const current = accessCodes.find((c) => c.id === editingId);
         const used = current?.usesUsed || 0;
         if (max < used) {
@@ -388,9 +385,7 @@ export default function AccessCodes() {
   };
 
   const expiringSoonCount = useMemo(() => {
-    return accessCodes.filter(
-      (c) => c.status === "active" && isExpiringSoon(c.expiresAtTs, 7)
-    ).length;
+    return accessCodes.filter((c) => c.status === "active" && isExpiringSoon(c.expiresAtTs, 7)).length;
   }, [accessCodes]);
 
   const totalUses = useMemo(() => {
@@ -407,9 +402,7 @@ export default function AccessCodes() {
       header: "Access Code",
       render: (item: AccessCode) => (
         <div className="flex items-center gap-2">
-          <code className="px-2 py-1 rounded bg-muted font-mono text-sm">
-            {item.code}
-          </code>
+          <code className="px-2 py-1 rounded bg-muted font-mono text-sm">{item.code}</code>
           <Button
             variant="ghost"
             size="icon"
@@ -428,11 +421,7 @@ export default function AccessCodes() {
         </div>
       ),
     },
-    {
-      key: "testSeries",
-      header: "Test Series",
-      className: "hidden md:table-cell",
-    },
+    { key: "testSeries", header: "Test Series", className: "hidden md:table-cell" },
     {
       key: "uses",
       header: "Uses",
@@ -446,18 +435,12 @@ export default function AccessCodes() {
             <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
               <div className="h-full gradient-bg" style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-sm text-muted-foreground">
-              {used}/{max}
-            </span>
+            <span className="text-sm text-muted-foreground">{used}/{max}</span>
           </div>
         );
       },
     },
-    {
-      key: "expiry",
-      header: "Expiry",
-      className: "hidden sm:table-cell",
-    },
+    { key: "expiry", header: "Expiry", className: "hidden sm:table-cell" },
     {
       key: "status",
       header: "Status",
@@ -525,13 +508,9 @@ export default function AccessCodes() {
   if (!uid) {
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-display font-bold">Access Codes</h1>
-            <p className="text-muted-foreground text-sm">
-              Create and manage access codes for your test series
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-display font-bold">Access Codes</h1>
+          <p className="text-muted-foreground text-sm">Create and manage access codes for your test series</p>
         </div>
         <EmptyState
           icon={Key}
@@ -550,9 +529,7 @@ export default function AccessCodes() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-display font-bold">Access Codes</h1>
-            <p className="text-muted-foreground text-sm">
-              Create and manage access codes for your test series
-            </p>
+            <p className="text-muted-foreground text-sm">Create and manage access codes for your test series</p>
           </div>
           <Button className="gradient-bg text-white" onClick={openCreate}>
             <Plus className="h-4 w-4 mr-2" />
@@ -562,7 +539,7 @@ export default function AccessCodes() {
         <EmptyState
           icon={Key}
           title="No access codes created yet"
-          description="Create access codes to let students access your test series. Share the codes via WhatsApp, email, or any other platform."
+          description="Create access codes to let students access your test series."
           actionLabel="Create Access Code"
           onAction={openCreate}
         />
@@ -576,9 +553,7 @@ export default function AccessCodes() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold">Access Codes</h1>
-          <p className="text-muted-foreground text-sm">
-            Create and manage access codes for your test series
-          </p>
+          <p className="text-muted-foreground text-sm">Create and manage access codes for your test series</p>
         </div>
 
         <Dialog
@@ -597,35 +572,30 @@ export default function AccessCodes() {
 
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Edit Access Code" : "Create New Access Code"}
-              </DialogTitle>
+              <DialogTitle>{editingId ? "Edit Access Code" : "Create New Access Code"}</DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label>Test Series</Label>
-                <Select
-                  value={selectedTestSeriesId}
-                  onValueChange={setSelectedTestSeriesId}
-                >
+                <Select value={selectedTestSeriesId} onValueChange={setSelectedTestSeriesId}>
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        importedTests.length ? "Select test series" : "No imported tests yet"
+                        testSeriesOptions.length ? "Select test series" : "No test series yet"
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {importedTests.length ? (
-                      importedTests.map((t) => (
+                    {testSeriesOptions.length ? (
+                      testSeriesOptions.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
                           {t.title}
                         </SelectItem>
                       ))
                     ) : (
                       <SelectItem value="__none" disabled>
-                        Import a test series first
+                        Create a test series first
                       </SelectItem>
                     )}
                   </SelectContent>
@@ -651,56 +621,15 @@ export default function AccessCodes() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Max Uses</Label>
-                  <Input
-                    type="number"
-                    placeholder="100"
-                    value={maxUses}
-                    onChange={(e) => setMaxUses(e.target.value)}
-                  />
+                  <Input type="number" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Expiry Date</Label>
-                  <Input
-                    type="date"
-                    value={expiryDate}
-                    onChange={(e) => setExpiryDate(e.target.value)}
-                  />
+                  <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
                 </div>
               </div>
 
-              {newCode && !editingId && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="p-4 rounded-xl bg-muted/50 border border-border"
-                >
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Generated Access Code
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <code className="text-2xl font-bold font-mono gradient-text">
-                      {newCode}
-                    </code>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => copyToClipboard(newCode)}
-                    >
-                      {copiedCode === newCode ? (
-                        <Check className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <Copy className="h-5 w-5" />
-                      )}
-                    </Button>
-                  </div>
-                </motion.div>
-              )}
-
-              <Button
-                className="w-full gradient-bg text-white"
-                onClick={handleSave}
-                disabled={isSaving}
-              >
+              <Button className="w-full gradient-bg text-white" onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Saving..." : editingId ? "Update Access Code" : "Create Access Code"}
               </Button>
             </div>
@@ -714,7 +643,7 @@ export default function AccessCodes() {
           { icon: Key, label: "Total Codes", value: accessCodes.length },
           { icon: Users, label: "Total Uses", value: totalUses },
           { icon: Check, label: "Active", value: activeCount },
-          { icon: Calendar, label: "Expiring Soon", value: expiringSoonCount },
+          { icon: Calendar, label: "Expiring Soon", value: accessCodes.filter((c) => c.status === "active" && isExpiringSoon(c.expiresAtTs, 7)).length },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -737,7 +666,6 @@ export default function AccessCodes() {
         ))}
       </div>
 
-      {/* Table */}
       <DataTable data={accessCodes} columns={columns} />
     </div>
   );
