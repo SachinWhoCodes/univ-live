@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import {
   Save,
   Loader2,
   Plus,
   Trash2,
   Trophy,
-  BookOpen
+  BookOpen,
+  CheckSquare,
+  Square,
+  User,
+  Quote,
+  Layout,
+  BarChart,
+  ImageIcon
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,15 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useAuth } from "@/contexts/AuthProvider"; // ✅ Uses your specific Context
+import { useAuth } from "@/contexts/AuthProvider"; 
 import { db } from "@/lib/firebase";
 import {
   doc,
@@ -31,7 +29,7 @@ import {
   updateDoc,
   collection,
   query,
-  where
+  orderBy
 } from "firebase/firestore";
 import { toast } from "sonner";
 
@@ -40,442 +38,427 @@ type StatItem = { label: string; value: string; icon: string };
 type AchievementItem = { title: string; description: string; icon: string };
 type FacultyItem = { name: string; subject: string; designation: string; experience: string; bio: string; image: string };
 type TestimonialItem = { name: string; course: string; rating: number; text: string; avatar: string };
-type CourseItem = {
-  id: string; 
+
+// New Type for Featured Tests
+type AvailableTest = {
+  id: string;
   title: string;
-  price: number;
-  discountPrice?: number;
-  image: string;
-  enrolledCount?: number;
-  rating?: string;
+  subject: string;
+  price: string | number;
 };
 
-// Available Icons for selection
-const ICON_OPTIONS = [
-  { value: "users", label: "Users" },
-  { value: "trophy", label: "Trophy" },
-  { value: "star", label: "Star" },
-  { value: "target", label: "Target" },
-  { value: "graduation-cap", label: "Graduation Cap" },
-  { value: "award", label: "Award" },
-  { value: "trending-up", label: "Trending Up" },
-];
-
 export default function WebsiteSettings() {
-  // ✅ FIX: Destructure firebaseUser instead of user
-  const { firebaseUser } = useAuth(); 
-  
+  const { firebaseUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // --- Data State ---
+  // --- Existing Website Content State ---
   const [coachingName, setCoachingName] = useState("");
   const [tagline, setTagline] = useState("");
   const [heroImage, setHeroImage] = useState("");
-  const [availableTests, setAvailableTests] = useState<any[]>([]);
   
-  // Complex Lists
   const [stats, setStats] = useState<StatItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [faculty, setFaculty] = useState<FacultyItem[]>([]);
   const [testimonials, setTestimonials] = useState<TestimonialItem[]>([]);
-  const [selectedCourses, setSelectedCourses] = useState<CourseItem[]>([]);
 
-  // Load Data
+  // --- NEW: Featured Courses State ---
+  const [availableTests, setAvailableTests] = useState<AvailableTest[]>([]); 
+  const [featuredTestIds, setFeaturedTestIds] = useState<string[]>([]); 
+
+  // --- 1. Fetch All Data ---
   useEffect(() => {
-    async function loadData() {
-      // ✅ FIX: Check firebaseUser
-      if (!firebaseUser) return;
-      
-      try {
-        setLoading(true);
+    if (!firebaseUser) return;
 
-        // 1. Fetch Educator Settings using firebaseUser.uid
-        const docRef = doc(db, "educators", firebaseUser.uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data();
+    const fetchData = async () => {
+      try {
+        // A. Fetch Educator Profile (Where websiteConfig lives)
+        const educatorRef = doc(db, "educators", firebaseUser.uid);
+        const educatorSnap = await getDoc(educatorRef);
+
+        if (educatorSnap.exists()) {
+          const data = educatorSnap.data().websiteConfig || {};
+          
+          // Load existing settings
           setCoachingName(data.coachingName || "");
           setTagline(data.tagline || "");
+          setHeroImage(data.heroImage || "");
+          setStats(data.stats || []);
+          setAchievements(data.achievements || []);
+          setFaculty(data.faculty || []);
+          setTestimonials(data.testimonials || []);
           
-          const config = data.websiteConfig || {};
-          setHeroImage(config.heroImage || "");
-          setStats(config.stats || []);
-          setAchievements(config.achievements || []);
-          setFaculty(config.faculty || []);
-          setTestimonials(config.testimonials || []);
-          setSelectedCourses(config.courses || []);
+          // Load Featured Tests selection
+          setFeaturedTestIds(data.featuredTestIds || []);
         }
 
-        // 2. Fetch Available Tests (to use as Courses)
+        // B. Fetch Educator's Tests (To display in the selection list)
+        // We query the 'my_tests' sub-collection
         const testsQuery = query(
-          collection(db, "tests"),
-          where("educatorId", "==", firebaseUser.uid)
+          collection(db, "educators", firebaseUser.uid, "my_tests"),
+          orderBy("createdAt", "desc")
         );
         const testsSnap = await getDocs(testsQuery);
-        const testsData = testsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        const testsData = testsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as AvailableTest[];
+        
         setAvailableTests(testsData);
 
-      } catch (error) {
-        console.error("Error loading settings:", error);
+      } catch (err) {
+        console.error("Error loading settings:", err);
         toast.error("Failed to load website settings");
       } finally {
         setLoading(false);
       }
-    }
-    loadData();
+    };
+
+    fetchData();
   }, [firebaseUser]);
 
-  // --- Save Handler ---
+  // --- 2. Save Data ---
   const handleSave = async () => {
     if (!firebaseUser) return;
     setSaving(true);
+
     try {
-      const docRef = doc(db, "educators", firebaseUser.uid);
+      const educatorRef = doc(db, "educators", firebaseUser.uid);
       
-      await updateDoc(docRef, {
+      // Construct the config object with ALL fields
+      const websiteConfig = {
         coachingName,
         tagline,
-        websiteConfig: {
-          heroImage,
-          stats,
-          achievements,
-          faculty,
-          testimonials,
-          courses: selectedCourses,
-          updatedAt: new Date().toISOString()
-        }
-      });
+        heroImage,
+        stats,
+        achievements,
+        faculty,
+        testimonials,
+        featuredTestIds, // Includes the new selection
+        updatedAt: new Date()
+      };
+
+      // Clean undefined values to prevent Firebase errors
+      Object.keys(websiteConfig).forEach(key => 
+        (websiteConfig as any)[key] === undefined && delete (websiteConfig as any)[key]
+      );
+
+      // Save to Firestore
+      await updateDoc(educatorRef, { websiteConfig });
       
-      toast.success("Website updated successfully!");
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to save changes");
+      toast.success("Website published successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save changes.");
     } finally {
       setSaving(false);
     }
   };
 
-  // --- Helpers for Course/Test Logic ---
-  const toggleCourse = (test: any) => {
-    const exists = selectedCourses.find(c => c.id === test.id);
-    if (exists) {
-      // Remove
-      setSelectedCourses(prev => prev.filter(c => c.id !== test.id));
-    } else {
-      // Add (Map Test Data to Course Data)
-      const newCourse: CourseItem = {
-        id: test.id,
-        title: test.title || "Untitled Course",
-        price: test.price === "Included" ? 0 : Number(test.price) || 999,
-        discountPrice: test.price === "Included" ? 0 : Number(test.price) || 999,
-        image: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=800&q=80", // Default placeholder
-        rating: "4.8",
-        enrolledCount: 100
-      };
-      setSelectedCourses(prev => [...prev, newCourse]);
-    }
+  // --- Helper: Toggle Featured Course ---
+  const toggleFeatured = (testId: string) => {
+    setFeaturedTestIds(prev => 
+      prev.includes(testId) 
+        ? prev.filter(id => id !== testId) // Remove if already selected
+        : [...prev, testId] // Add if not selected
+    );
   };
 
-  const updateCourseImage = (id: string, url: string) => {
-    setSelectedCourses(prev => prev.map(c => c.id === id ? { ...c, image: url } : c));
-  };
-
-  // --- Render Helpers ---
-
-  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 pb-20">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-1 max-w-5xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Website Builder</h1>
-          <p className="text-muted-foreground">Manage your coaching website content</p>
+          <h1 className="text-2xl font-bold">Website Builder</h1>
+          <p className="text-muted-foreground">Manage the content visible on your public website.</p>
         </div>
-        <Button onClick={handleSave} disabled={saving} className="gradient-bg text-white">
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          <Save className="mr-2 h-4 w-4" /> Save Changes
+        <Button onClick={handleSave} disabled={saving} className="gradient-bg text-white shadow-md">
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Publish Changes
         </Button>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 bg-muted/50 p-1">
-          <TabsTrigger value="general">General & Hero</TabsTrigger>
-          <TabsTrigger value="stats">Stats</TabsTrigger>
-          <TabsTrigger value="courses">Courses</TabsTrigger>
-          <TabsTrigger value="faculty">Faculty</TabsTrigger>
-          <TabsTrigger value="content">Content</TabsTrigger>
+        <TabsList className="flex flex-wrap h-auto gap-2 bg-transparent p-0 justify-start mb-6">
+          <TabsTrigger value="general" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><Layout className="w-4 h-4 mr-2" /> General</TabsTrigger>
+          <TabsTrigger value="courses" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><BookOpen className="w-4 h-4 mr-2" /> Featured</TabsTrigger>
+          <TabsTrigger value="stats" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><BarChart className="w-4 h-4 mr-2" /> Stats</TabsTrigger>
+          <TabsTrigger value="achievements" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><Trophy className="w-4 h-4 mr-2" /> Awards</TabsTrigger>
+          <TabsTrigger value="faculty" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><User className="w-4 h-4 mr-2" /> Faculty</TabsTrigger>
+          <TabsTrigger value="testimonials" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border bg-card shadow-sm"><Quote className="w-4 h-4 mr-2" /> Reviews</TabsTrigger>
         </TabsList>
 
-        {/* 1. General & Hero */}
-        <TabsContent value="general" className="space-y-4 mt-6">
-          <Card>
-            <CardHeader><CardTitle>Basic Info</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-2">
-                <Label>Coaching Name</Label>
-                <Input value={coachingName} onChange={e => setCoachingName(e.target.value)} placeholder="Ex: Zenith Academy" />
-              </div>
-              <div className="grid gap-2">
-                <Label>Tagline</Label>
-                <Input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Ex: Your Pathway to Success" />
-              </div>
-              <div className="grid gap-2">
-                <Label>Hero Background Image URL</Label>
-                <Input value={heroImage} onChange={e => setHeroImage(e.target.value)} placeholder="https://..." />
-                <p className="text-xs text-muted-foreground">Paste a direct image link (Unsplash, etc.)</p>
-              </div>
-            </CardContent>
-          </Card>
+        {/* --- 1. General Tab --- */}
+        <TabsContent value="general" className="space-y-6">
+           <Card>
+             <CardHeader>
+               <CardTitle>Hero Section</CardTitle>
+               <CardDescription>This is the first thing students see on your landing page.</CardDescription>
+             </CardHeader>
+             <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Institute Name</Label>
+                  <Input 
+                    value={coachingName} 
+                    onChange={e => setCoachingName(e.target.value)} 
+                    placeholder="e.g. Acme Academy"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tagline / Headline</Label>
+                  <Input 
+                    value={tagline} 
+                    onChange={e => setTagline(e.target.value)} 
+                    placeholder="e.g. Empowering Next Gen Leaders"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Hero Image URL</Label>
+                  <Input 
+                    value={heroImage} 
+                    onChange={e => setHeroImage(e.target.value)} 
+                    placeholder="https://example.com/hero.jpg"
+                  />
+                  {heroImage ? (
+                    <div className="mt-2 relative h-40 rounded-md overflow-hidden border">
+                      <img src={heroImage} alt="Hero Preview" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="mt-2 h-40 rounded-md border border-dashed flex items-center justify-center bg-muted/30">
+                      <div className="text-center text-muted-foreground">
+                        <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <span className="text-xs">No image provided</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+             </CardContent>
+           </Card>
         </TabsContent>
 
-        {/* 2. Stats */}
-        <TabsContent value="stats" className="space-y-4 mt-6">
+        {/* --- 2. Featured Courses Tab (NEW SECTION) --- */}
+        <TabsContent value="courses">
           <Card>
             <CardHeader>
-              <CardTitle>Key Statistics</CardTitle>
-              <CardDescription>Numbers displayed below the hero section.</CardDescription>
+              <CardTitle>Featured Test Series</CardTitle>
+              <CardDescription>
+                Select which tests appear on your home page. 
+                <span className="block mt-1 text-xs text-muted-foreground">
+                  Note: If you don't select any, the 4 newest tests will be shown automatically.
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {stats.map((stat, idx) => (
-                <div key={idx} className="flex gap-4 mb-4 items-end border-b pb-4 last:border-0">
-                  <div className="grid gap-2 flex-1">
-                    <Label>Label</Label>
-                    <Input value={stat.label} onChange={e => {
-                      const newStats = [...stats]; newStats[idx].label = e.target.value; setStats(newStats);
-                    }} placeholder="Students" />
-                  </div>
-                  <div className="grid gap-2 flex-1">
-                    <Label>Value</Label>
-                    <Input value={stat.value} onChange={e => {
-                      const newStats = [...stats]; newStats[idx].value = e.target.value; setStats(newStats);
-                    }} placeholder="10k+" />
-                  </div>
-                  <div className="grid gap-2 w-32">
-                    <Label>Icon</Label>
-                    <Select value={stat.icon} onValueChange={(val) => {
-                       const newStats = [...stats]; newStats[idx].icon = val; setStats(newStats);
-                    }}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {ICON_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => setStats(stats.filter((_, i) => i !== idx))}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+              {availableTests.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed rounded-lg bg-muted/20">
+                  <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="font-medium">No tests found</p>
+                  <p className="text-sm text-muted-foreground">Go to the "Test Series" tab to create your first exam.</p>
                 </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={() => setStats([...stats, { label: "", value: "", icon: "users" }])}>
-                <Plus className="mr-2 h-4 w-4" /> Add Stat
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* 3. Courses (From Tests) */}
-        <TabsContent value="courses" className="space-y-4 mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Featured Courses</CardTitle>
-              <CardDescription>Select created Tests to display as Courses on your homepage.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {availableTests.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No tests found. Create tests in the "Test Series" tab first.
-                </div>
-              )}
-              {availableTests.map(test => {
-                const isSelected = selectedCourses.some(c => c.id === test.id);
-                const currentCourse = selectedCourses.find(c => c.id === test.id);
-
-                return (
-                  <div key={test.id} className={`p-4 rounded-xl border ${isSelected ? "border-primary bg-primary/5" : "border-border"}`}>
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${isSelected ? "bg-primary text-white" : "bg-muted"}`}>
-                          <BookOpen className="h-5 w-5" />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {availableTests.map((test) => {
+                    const isSelected = featuredTestIds.includes(test.id);
+                    return (
+                      <div 
+                        key={test.id}
+                        onClick={() => toggleFeatured(test.id)}
+                        className={`
+                          cursor-pointer flex items-center gap-3 p-4 rounded-lg border transition-all select-none
+                          ${isSelected 
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary/20' 
+                            : 'border-border hover:bg-muted/50'}
+                        `}
+                      >
+                        <div className={`
+                          flex items-center justify-center
+                          ${isSelected ? 'text-primary' : 'text-muted-foreground'}
+                        `}>
+                           {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
                         </div>
-                        <div>
-                          <h4 className="font-semibold">{test.title}</h4>
-                          <p className="text-xs text-muted-foreground">{test.description?.slice(0, 50)}...</p>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm line-clamp-1">{test.title}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                             <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded truncate max-w-[120px]">
+                               {test.subject}
+                             </span>
+                             <span className={`text-xs font-medium ${test.price === "Included" ? "text-green-600" : ""}`}>
+                               {test.price === "Included" ? "Free" : `₹${test.price}`}
+                             </span>
+                          </div>
                         </div>
                       </div>
-                      <Switch checked={isSelected} onCheckedChange={() => toggleCourse(test)} />
-                    </div>
-                    
-                    {isSelected && currentCourse && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pl-12 space-y-3">
-                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <Label className="text-xs">Display Price</Label>
-                                <Input 
-                                  className="h-8" 
-                                  type="number" 
-                                  value={currentCourse.discountPrice} 
-                                  onChange={(e) => {
-                                      const val = Number(e.target.value);
-                                      setSelectedCourses(prev => prev.map(c => c.id === test.id ? { ...c, discountPrice: val, price: val + 500 } : c))
-                                  }}
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <Label className="text-xs">Cover Image URL</Label>
-                                <Input 
-                                  className="h-8" 
-                                  placeholder="https://..." 
-                                  value={currentCourse.image} 
-                                  onChange={(e) => updateCourseImage(test.id, e.target.value)}
-                                />
-                            </div>
-                         </div>
-                         <p className="text-[10px] text-muted-foreground">
-                            * This test will appear as a clickable course card on your website.
-                         </p>
-                      </motion.div>
-                    )}
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* 4. Faculty */}
-        <TabsContent value="faculty" className="space-y-4 mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Faculty Team</CardTitle>
-              <CardDescription>Add profiles for your educators.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6">
-                {faculty.map((member, idx) => (
-                  <div key={idx} className="p-4 border rounded-xl relative group bg-muted/20">
+        {/* --- 3. Stats Tab --- */}
+        <TabsContent value="stats">
+           <Card>
+             <CardHeader>
+               <CardTitle>Key Statistics</CardTitle>
+               <CardDescription>Showcase your institute's impact.</CardDescription>
+             </CardHeader>
+             <CardContent className="space-y-4">
+               {stats.map((stat, idx) => (
+                 <div key={idx} className="flex gap-4 items-end p-3 border rounded-lg bg-card">
+                    <div className="flex-1 space-y-2">
+                       <Label>Label</Label>
+                       <Input 
+                         value={stat.label} 
+                         onChange={e => {
+                           const list = [...stats]; list[idx].label = e.target.value; setStats(list);
+                         }} 
+                         placeholder="e.g. Students"
+                       />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                       <Label>Value</Label>
+                       <Input 
+                         value={stat.value} 
+                         onChange={e => {
+                           const list = [...stats]; list[idx].value = e.target.value; setStats(list);
+                         }} 
+                         placeholder="e.g. 1000+"
+                       />
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => {
+                       setStats(stats.filter((_, i) => i !== idx));
+                    }}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                 </div>
+               ))}
+               <Button variant="outline" className="w-full border-dashed" onClick={() => setStats([...stats, { label: "", value: "", icon: "Users" }])}>
+                 <Plus className="mr-2 h-4 w-4" /> Add Stat
+               </Button>
+             </CardContent>
+           </Card>
+        </TabsContent>
+
+        {/* --- 4. Achievements Tab --- */}
+        <TabsContent value="achievements">
+           <Card>
+             <CardHeader>
+               <CardTitle>Awards & Achievements</CardTitle>
+             </CardHeader>
+             <CardContent className="space-y-4">
+               {achievements.map((item, idx) => (
+                 <div key={idx} className="p-4 border rounded-lg space-y-4 relative bg-card">
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="absolute top-2 right-2 text-destructive hover:bg-destructive/10"
-                      onClick={() => setFaculty(faculty.filter((_, i) => i !== idx))}
+                      className="absolute top-2 right-2"
+                      onClick={() => setAchievements(achievements.filter((_, i) => i !== idx))}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
-                    
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Name</Label>
-                        <Input value={member.name} onChange={e => {
-                          const list = [...faculty]; list[idx].name = e.target.value; setFaculty(list);
-                        }} placeholder="Dr. John Doe" />
-                      </div>
-                      <div className="space-y-2">
-                         <Label>Subject</Label>
-                         <Input value={member.subject} onChange={e => {
-                          const list = [...faculty]; list[idx].subject = e.target.value; setFaculty(list);
-                        }} placeholder="Physics" />
-                      </div>
-                      <div className="space-y-2">
-                         <Label>Designation</Label>
-                         <Input value={member.designation} onChange={e => {
-                          const list = [...faculty]; list[idx].designation = e.target.value; setFaculty(list);
-                        }} placeholder="Senior Faculty" />
-                      </div>
-                      <div className="space-y-2">
-                         <Label>Experience</Label>
-                         <Input value={member.experience} onChange={e => {
-                          const list = [...faculty]; list[idx].experience = e.target.value; setFaculty(list);
-                        }} placeholder="10+ Years" />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                         <Label>Profile Image URL</Label>
-                         <Input value={member.image} onChange={e => {
-                          const list = [...faculty]; list[idx].image = e.target.value; setFaculty(list);
-                        }} placeholder="https://..." />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                         <Label>Bio</Label>
-                         <Textarea value={member.bio} onChange={e => {
-                          const list = [...faculty]; list[idx].bio = e.target.value; setFaculty(list);
-                        }} placeholder="Short bio..." />
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                          <Label>Title</Label>
+                          <Input value={item.title} onChange={e => {
+                            const list = [...achievements]; list[idx].title = e.target.value; setAchievements(list);
+                          }} placeholder="e.g. Best Coaching 2024" />
+                       </div>
+                       <div className="space-y-2">
+                          <Label>Description</Label>
+                          <Input value={item.description} onChange={e => {
+                            const list = [...achievements]; list[idx].description = e.target.value; setAchievements(list);
+                          }} placeholder="Short detail..." />
+                       </div>
                     </div>
-                  </div>
-                ))}
-                <Button variant="outline" className="w-full dashed-border" onClick={() => setFaculty([...faculty, { name: "", subject: "", designation: "", experience: "", bio: "", image: "" }])}>
-                   <Plus className="mr-2 h-4 w-4" /> Add Faculty Member
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                 </div>
+               ))}
+               <Button variant="outline" className="w-full border-dashed" onClick={() => setAchievements([...achievements, { title: "", description: "", icon: "Trophy" }])}>
+                 <Plus className="mr-2 h-4 w-4" /> Add Achievement
+               </Button>
+             </CardContent>
+           </Card>
         </TabsContent>
 
-        {/* 5. Content (Achievements & Testimonials) */}
-        <TabsContent value="content" className="space-y-6 mt-6">
-          
-          {/* Achievements Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Achievements</CardTitle>
-              <CardDescription>Showcase your awards and milestones.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {achievements.map((item, idx) => (
-                <div key={idx} className="flex gap-4 mb-4 items-start border-b pb-4 last:border-0">
-                  <div className="grid gap-2 flex-1">
-                    <Label>Title</Label>
-                    <Input value={item.title} onChange={e => {
-                      const list = [...achievements]; list[idx].title = e.target.value; setAchievements(list);
-                    }} placeholder="Best Coaching 2024" />
-                    <Label className="mt-2">Description</Label>
-                    <Input value={item.description} onChange={e => {
-                      const list = [...achievements]; list[idx].description = e.target.value; setAchievements(list);
-                    }} placeholder="Awarded by..." />
-                  </div>
-                  <div className="grid gap-2 w-32">
-                    <Label>Icon</Label>
-                    <Select value={item.icon} onValueChange={(val) => {
-                       const list = [...achievements]; list[idx].icon = val; setAchievements(list);
-                    }}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {ICON_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => setAchievements(achievements.filter((_, i) => i !== idx))}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={() => setAchievements([...achievements, { title: "", description: "", icon: "trophy" }])}>
-                <Plus className="mr-2 h-4 w-4" /> Add Achievement
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Testimonials Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Testimonials</CardTitle>
-              <CardDescription>What students say about you.</CardDescription>
-            </CardHeader>
-            <CardContent>
-               <div className="grid gap-6">
-                {testimonials.map((item, idx) => (
-                  <div key={idx} className="p-4 border rounded-xl relative bg-muted/20">
-                     <Button 
+        {/* --- 5. Faculty Tab --- */}
+        <TabsContent value="faculty">
+           <Card>
+             <CardHeader>
+               <CardTitle>Our Faculty</CardTitle>
+             </CardHeader>
+             <CardContent className="space-y-4">
+               {faculty.map((item, idx) => (
+                 <div key={idx} className="p-4 border rounded-lg space-y-4 relative bg-card">
+                    <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="absolute top-2 right-2 text-destructive"
+                      className="absolute top-2 right-2"
+                      onClick={() => setFaculty(faculty.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                          <Label>Name</Label>
+                          <Input value={item.name} onChange={e => {
+                            const list = [...faculty]; list[idx].name = e.target.value; setFaculty(list);
+                          }} placeholder="Dr. Smith" />
+                       </div>
+                       <div className="space-y-2">
+                          <Label>Subject / Designation</Label>
+                          <Input value={item.subject} onChange={e => {
+                            const list = [...faculty]; list[idx].subject = e.target.value; setFaculty(list);
+                          }} placeholder="Physics HOD" />
+                       </div>
+                       <div className="space-y-2 md:col-span-2">
+                          <Label>Bio</Label>
+                          <Textarea value={item.bio} onChange={e => {
+                            const list = [...faculty]; list[idx].bio = e.target.value; setFaculty(list);
+                          }} placeholder="10+ years experience..." />
+                       </div>
+                       <div className="space-y-2 md:col-span-2">
+                          <Label>Image URL</Label>
+                          <Input value={item.image} onChange={e => {
+                            const list = [...faculty]; list[idx].image = e.target.value; setFaculty(list);
+                          }} placeholder="https://..." />
+                       </div>
+                    </div>
+                 </div>
+               ))}
+               <Button variant="outline" className="w-full border-dashed" onClick={() => setFaculty([...faculty, { name: "", subject: "", designation: "", experience: "", bio: "", image: "" }])}>
+                 <Plus className="mr-2 h-4 w-4" /> Add Faculty Member
+               </Button>
+             </CardContent>
+           </Card>
+        </TabsContent>
+
+        {/* --- 6. Testimonials Tab --- */}
+        <TabsContent value="testimonials">
+          <Card>
+            <CardHeader>
+               <CardTitle>Student Reviews</CardTitle>
+            </CardHeader>
+            <CardContent>
+               <div className="space-y-6">
+                {testimonials.map((item, idx) => (
+                  <div key={idx} className="p-4 border rounded-lg relative bg-card">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="absolute top-2 right-2"
                       onClick={() => setTestimonials(testimonials.filter((_, i) => i !== idx))}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
-
-                    <div className="grid md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div className="space-y-2">
                           <Label>Student Name</Label>
                           <Input value={item.name} onChange={e => {
@@ -483,7 +466,7 @@ export default function WebsiteSettings() {
                           }} />
                        </div>
                        <div className="space-y-2">
-                          <Label>Course Taken</Label>
+                          <Label>Course/Exam</Label>
                           <Input value={item.course} onChange={e => {
                             const list = [...testimonials]; list[idx].course = e.target.value; setTestimonials(list);
                           }} />
@@ -509,13 +492,12 @@ export default function WebsiteSettings() {
                     </div>
                   </div>
                 ))}
-                <Button variant="outline" className="w-full dashed-border" onClick={() => setTestimonials([...testimonials, { name: "", course: "", text: "", rating: 5, avatar: "" }])}>
+                <Button variant="outline" className="w-full border-dashed" onClick={() => setTestimonials([...testimonials, { name: "", course: "", text: "", rating: 5, avatar: "" }])}>
                    <Plus className="mr-2 h-4 w-4" /> Add Testimonial
                 </Button>
                </div>
             </CardContent>
           </Card>
-
         </TabsContent>
       </Tabs>
     </div>

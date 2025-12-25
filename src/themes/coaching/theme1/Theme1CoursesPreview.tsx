@@ -1,172 +1,158 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  ArrowRight,
-  Clock,
-  BookOpen,
-  Users,
-  Star,
-} from "lucide-react";
+import { ArrowRight, FileText, Star, Loader2, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTenant } from "@/contexts/TenantProvider";
+import { collection, query, where, limit, getDocs, orderBy, documentId } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
-const badgeColors: Record<string, string> = {
-  "Most Popular": "bg-gradient-to-r from-primary to-accent text-white",
-  New: "bg-green-500 text-white",
-  "Best Value": "bg-yellow-500 text-white",
-};
-
-const subjectColors: Record<string, string> = {
-  "All Subjects": "bg-pastel-lavender",
-  "English & GT": "bg-pastel-mint",
-  "Business Studies": "bg-pastel-yellow",
-  Economics: "bg-pastel-peach",
-  Mathematics: "bg-pastel-pink",
+type TestSeries = {
+  id: string;
+  title: string;
+  description: string;
+  price: string | number;
+  coverImage?: string;
+  subject?: string;
+  difficulty?: string;
+  testsCount?: number;
 };
 
 export default function Theme1CoursesPreview() {
   const { tenant } = useTenant();
+  const [courses, setCourses] = useState<TestSeries[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const fetchCourses = async () => {
+      try {
+        let q;
+        // Check if educator has selected specific tests in Website Settings
+        const featuredIds = tenant.websiteConfig?.featuredTestIds || [];
+
+        // CASE A: Educator has manually selected tests to show
+        if (featuredIds.length > 0) {
+          // Firestore 'in' query supports up to 10 items
+          const safeIds = featuredIds.slice(0, 10); 
+          q = query(
+            collection(db, "educators", tenant.id, "my_tests"),
+            where(documentId(), "in", safeIds)
+          );
+        } 
+        // CASE B: No selection, show top 4 newest
+        else {
+          q = query(
+            collection(db, "educators", tenant.id, "my_tests"),
+            orderBy("createdAt", "desc"),
+            limit(4)
+          );
+        }
+
+        const snap = await getDocs(q);
+        const fetchedData = snap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as TestSeries[];
+
+        setCourses(fetchedData);
+      } catch (error) {
+        console.error("Error fetching courses:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, [tenant]);
 
   if (!tenant) return null;
-
-  const courses = tenant.websiteConfig?.courses?.slice(0, 4) || [];
-
-  if (!courses.length) return null;
+  if (loading) return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-muted-foreground" /></div>;
+  if (courses.length === 0) return null;
 
   return (
     <section className="py-20 bg-pastel-cream/30 dark:bg-muted/10">
       <div className="container mx-auto px-4">
         {/* Header */}
-        <div className="text-center mb-12">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-          >
-            <Badge variant="outline" className="mb-4 px-4 py-1 rounded-full">
-              Our Courses
+        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-4">
+          <div className="max-w-2xl">
+            <Badge variant="secondary" className="mb-4 text-primary bg-primary/10 hover:bg-primary/20 transition-colors">
+              Featured Content
             </Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Most Popular Courses
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+              Featured Exam Series
             </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Choose from our expertly designed courses to crack CUET 2025 with confidence
+            <p className="text-muted-foreground text-lg">
+              Handpicked test series to help you prepare effectively.
             </p>
-          </motion.div>
+          </div>
+          <Link to="/courses">
+            <Button variant="outline" className="group">
+              View All Series
+              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </Button>
+          </Link>
         </div>
 
-        {/* Course Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {courses.map((course: any, index: number) => (
-            <CourseCard key={course.id || index} course={course} index={index} />
+        {/* Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {courses.map((course, index) => (
+            <motion.div
+              key={course.id}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.1 }}
+            >
+              <Link to={`/course/${course.id}`}>
+                <Card className="h-full overflow-hidden hover:shadow-lg transition-all duration-300 border-border/50 bg-card/50 backdrop-blur-sm group">
+                  <div className="aspect-video relative overflow-hidden bg-muted">
+                    {course.coverImage ? (
+                       <img
+                         src={course.coverImage}
+                         alt={course.title}
+                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                       />
+                    ) : (
+                       <div className="w-full h-full flex flex-col items-center justify-center bg-primary/5 text-primary/40 gap-2">
+                          <FileText className="h-10 w-10" />
+                       </div>
+                    )}
+                    {course.subject && (
+                      <div className="absolute top-2 right-2">
+                        <Badge className="bg-white/90 text-black hover:bg-white shadow-sm backdrop-blur-md">
+                          {course.subject}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  <CardContent className="p-5">
+                    <h3 className="font-bold text-lg mb-2 line-clamp-1 group-hover:text-primary transition-colors">
+                      {course.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-4 h-10">
+                      {course.description}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                      <span className={`font-bold ${course.price === "Included" || course.price == 0 ? "text-green-600" : ""}`}>
+                         {course.price === "Included" || course.price == 0 ? "Free" : `₹${course.price}`}
+                      </span>
+                      <Button size="sm" variant="secondary" className="rounded-full h-8 w-8 p-0">
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </motion.div>
           ))}
-        </div>
-
-        {/* View All */}
-        <div className="text-center mt-12">
-          <Button size="lg" className="gradient-bg rounded-full" asChild>
-            <Link to="/courses">
-              View All Courses
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Link>
-          </Button>
         </div>
       </div>
     </section>
   );
 }
-
-function CourseCard({
-  course,
-  index,
-}: {
-  course: any;
-  index: number;
-}) {
-  const bgColor =
-    subjectColors[course.subject] || "bg-pastel-mint";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ delay: index * 0.1 }}
-    >
-      <Link to={`/courses/${course.slug}`}>
-        <Card
-          className={`card-soft border-0 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${bgColor} dark:bg-card`}
-        >
-          <CardContent className="p-0">
-            {/* Header */}
-            <div className="p-4 relative">
-              {course.badge && (
-                <Badge
-                  className={`absolute top-2 right-2 ${badgeColors[course.badge]}`}
-                >
-                  {course.badge}
-                </Badge>
-              )}
-
-              <div className="h-12 w-12 rounded-xl bg-white/80 dark:bg-background/80 flex items-center justify-center mb-3">
-                <BookOpen className="h-6 w-6 text-primary" />
-              </div>
-
-              <h3 className="font-semibold text-lg line-clamp-2 mb-2">
-                {course.title}
-              </h3>
-              <p className="text-sm text-muted-foreground line-clamp-2">
-                {course.description}
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-white/50 dark:bg-background/50">
-              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {course.durationWeeks} weeks
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5" />
-                  {course.enrolledCount?.toLocaleString() || "1000+"}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  {course.price === 0 ? (
-                    <span className="text-lg font-bold text-green-600">
-                      Free
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold">
-                        ₹{(course.discountPrice || course.price).toLocaleString()}
-                      </span>
-                      {course.discountPrice && (
-                        <span className="text-sm text-muted-foreground line-through">
-                          ₹{course.price.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 text-sm">
-                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">
-                    {course.rating || "4.8"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
-    </motion.div>
-  );
-}
-
