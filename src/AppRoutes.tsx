@@ -18,6 +18,8 @@ import Index from "@/pages/Index";
 import HowItWorks from "@/pages/HowItWorks";
 import Pricing from "@/pages/Pricing";
 
+import AdminTestManager from "./pages/AdminTestManager";
+
 // Educator Dashboard
 import EducatorLayout from "@/components/educator/EducatorLayout";
 import EducatorDashboard from "@/pages/educator/Dashboard";
@@ -56,6 +58,7 @@ export default function AppRoutes() {
         <>
           {/* --- Public Routes (Open to everyone) --- */}
           <Route path="/" element={<TenantHome />} />
+          <Route path="/admin-test" element={<AdminTestManager />} />
           <Route path="/courses" element={<TenantCourses />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />

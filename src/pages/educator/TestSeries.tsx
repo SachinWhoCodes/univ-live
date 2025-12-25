@@ -1,604 +1,251 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Search,
-  Filter,
-  Plus,
-  MoreVertical,
-  Eye,
-  EyeOff,
-  Edit,
-  Trash2,
-  FileText,
-  Users,
-  Loader2,
+  Search, Plus, MoreVertical, Edit, Trash2, FileText, 
+  Download, Clock, BookOpen, Loader2, X, Save, Check
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import EmptyState from "@/components/educator/EmptyState";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import EmptyState from "@/components/educator/EmptyState"; 
 
+// Firebase
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  Timestamp,
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
+  collection, doc, addDoc, getDocs, updateDoc, deleteDoc, 
+  onSnapshot, query, where, serverTimestamp, writeBatch 
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-interface ImportedTestSeries {
+// --- Types ---
+type Question = {
   id: string;
-  title: string;
-  subject: string;
-  testsCount: number;
-  attempts: number;
-  status: "active" | "hidden";
-  difficulty: "Easy" | "Medium" | "Hard";
-  createdAt?: Timestamp | null;
-
-  // meta
-  source?: "bank" | "custom";
-  bankTestId?: string;
-}
-
-interface BankTestSeries {
-  id: string;
-  title: string;
-  subject: string;
-  testsCount: number;
-  difficulty: "Easy" | "Medium" | "Hard";
-  price: string; // "Included" or "₹499"
-  description: string;
-  category: "NEET" | "JEE" | "CUET" | "Board Exams" | "All";
-  isActive?: boolean;
-  createdAt?: Timestamp | null;
-}
-
-function difficultyBadgeClass(d: "Easy" | "Medium" | "Hard") {
-  return cn(
-    "text-xs",
-    d === "Hard" &&
-      "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    d === "Medium" &&
-      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    d === "Easy" &&
-      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-  );
-}
+  text: string;
+  options: string[];
+  correctOptionIndex: number;
+  positiveMarks: number;
+  negativeMarks: number;
+};
 
 export default function TestSeries() {
-  const [uid, setUid] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("library");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
+  // Data
+  const [myTests, setMyTests] = useState<any[]>([]);
+  const [bankTests, setBankTests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // UI States
+  const [isManageOpen, setIsManageOpen] = useState(false);
+  const [selectedTest, setSelectedTest] = useState<any>(null);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
-  // Imported tab
-  const [imported, setImported] = useState<ImportedTestSeries[]>([]);
-  const [loadingImported, setLoadingImported] = useState(true);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState("all");
-
-  // Explore tab
-  const [bankFilter, setBankFilter] = useState<"All" | "NEET" | "JEE" | "CUET" | "Board Exams">("All");
-  const [bankTests, setBankTests] = useState<BankTestSeries[]>([]);
-  const [loadingBank, setLoadingBank] = useState(true);
-
-  // Create/Edit dialog
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const [formTitle, setFormTitle] = useState("");
-  const [formSubject, setFormSubject] = useState("General");
-  const [formDifficulty, setFormDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
-  const [formTestsCount, setFormTestsCount] = useState<string>("10");
-  const [saving, setSaving] = useState(false);
-
-  // Auth
+  // --- 1. Auth & Data Fetching ---
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
-    return () => unsub();
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUser(user);
+
+        // A. Fetch MY Tests (Nested Collection: educators/{uid}/my_tests)
+        const myTestsQuery = query(collection(db, "educators", user.uid, "my_tests"));
+        const unsubMyTests = onSnapshot(myTestsQuery, (snap) => {
+          setMyTests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // B. Fetch BANK Tests (Root Collection: test_series where author == admin)
+        const bankQuery = query(collection(db, "test_series"), where("authorId", "==", "admin"));
+        const unsubBank = onSnapshot(bankQuery, (snap) => {
+          setBankTests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        });
+
+        return () => { unsubMyTests(); unsubBank(); };
+      } else {
+        setLoading(false);
+      }
+    });
+    return () => unsubAuth();
   }, []);
 
-  // Load Imported Tests
-  useEffect(() => {
-    if (!uid) {
-      setImported([]);
-      setLoadingImported(false);
-      return;
-    }
+  // --- 2. Action: Import from Bank ---
+  const handleImport = async (bankTest: any) => {
+    if (!currentUser) return;
+    setImportingId(bankTest.id);
 
-    setLoadingImported(true);
-    const ref = collection(db, "educators", uid, "importedTests");
-    const q = query(ref, orderBy("createdAt", "desc"));
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: ImportedTestSeries[] = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            id: d.id,
-            title: String(data?.title || "Untitled"),
-            subject: String(data?.subject || "General"),
-            testsCount: Number(data?.testsCount || 0),
-            attempts: Number(data?.attempts || 0),
-            status: (data?.status || "active") as "active" | "hidden",
-            difficulty: (data?.difficulty || "Medium") as "Easy" | "Medium" | "Hard",
-            createdAt: (data?.createdAt as Timestamp) || null,
-            source: (data?.source || "custom") as "bank" | "custom",
-            bankTestId: data?.bankTestId ? String(data.bankTestId) : undefined,
-          };
-        });
-
-        setImported(rows);
-        setLoadingImported(false);
-      },
-      () => {
-        setImported([]);
-        setLoadingImported(false);
-        toast.error("Failed to load imported tests");
-      }
-    );
-
-    return () => unsub();
-  }, [uid]);
-
-  // Load Test Bank (filtered)
-  useEffect(() => {
-    setLoadingBank(true);
-
-    const ref = collection(db, "testBank");
-
-    // If you later want to “disable” a bank test, keep isActive=true.
-    const q =
-      bankFilter === "All"
-        ? query(ref, orderBy("createdAt", "desc"))
-        : query(ref, where("category", "==", bankFilter), orderBy("createdAt", "desc"));
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: BankTestSeries[] = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            id: d.id,
-            title: String(data?.title || "Untitled"),
-            subject: String(data?.subject || "General"),
-            testsCount: Number(data?.testsCount || 0),
-            difficulty: (data?.difficulty || "Medium") as "Easy" | "Medium" | "Hard",
-            price: String(data?.price || "Included"),
-            description: String(data?.description || ""),
-            category: (data?.category || "All") as any,
-            isActive: data?.isActive !== false,
-            createdAt: (data?.createdAt as Timestamp) || null,
-          };
-        });
-
-        // Only keep active ones by default
-        setBankTests(rows.filter((r) => r.isActive !== false));
-        setLoadingBank(false);
-      },
-      () => {
-        setBankTests([]);
-        setLoadingBank(false);
-        toast.error("Failed to load test bank");
-      }
-    );
-
-    return () => unsub();
-  }, [bankFilter]);
-
-  const subjectsForFilter = useMemo(() => {
-    const set = new Set(imported.map((i) => i.subject));
-    return ["all", ...Array.from(set)];
-  }, [imported]);
-
-  const filteredImported = useMemo(() => {
-    return imported.filter((test) => {
-      const matchesSearch = test.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesSubject = selectedSubject === "all" || test.subject === selectedSubject;
-      return matchesSearch && matchesSubject;
-    });
-  }, [imported, searchQuery, selectedSubject]);
-
-  function resetDialog() {
-    setEditingId(null);
-    setFormTitle("");
-    setFormSubject("General");
-    setFormDifficulty("Medium");
-    setFormTestsCount("10");
-  }
-
-  function openCreate() {
-    resetDialog();
-    setDialogOpen(true);
-  }
-
-  function openEdit(item: ImportedTestSeries) {
-    setEditingId(item.id);
-    setFormTitle(item.title);
-    setFormSubject(item.subject);
-    setFormDifficulty(item.difficulty);
-    setFormTestsCount(String(item.testsCount || 0));
-    setDialogOpen(true);
-  }
-
-  async function saveCustomTestSeries() {
-    if (!uid) {
-      toast.error("Please login as educator");
-      return;
-    }
-
-    const title = formTitle.trim();
-    const testsCount = Number(formTestsCount);
-
-    if (!title) {
-      toast.error("Please enter title");
-      return;
-    }
-    if (!Number.isFinite(testsCount) || testsCount <= 0) {
-      toast.error("Tests count must be a positive number");
-      return;
-    }
-
-    setSaving(true);
     try {
-      if (!editingId) {
-        await addDoc(collection(db, "educators", uid, "importedTests"), {
-          title,
-          subject: formSubject,
-          testsCount,
-          attempts: 0,
-          status: "active",
-          difficulty: formDifficulty,
-          source: "custom",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        toast.success("Test series created");
-      } else {
-        await updateDoc(doc(db, "educators", uid, "importedTests", editingId), {
-          title,
-          subject: formSubject,
-          testsCount,
-          difficulty: formDifficulty,
-          updatedAt: serverTimestamp(),
-        });
-        toast.success("Test series updated");
-      }
-
-      setDialogOpen(false);
-      resetDialog();
-    } catch {
-      toast.error("Could not save test series");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function toggleVisibility(item: ImportedTestSeries) {
-    if (!uid) return;
-    try {
-      const next = item.status === "active" ? "hidden" : "active";
-      await updateDoc(doc(db, "educators", uid, "importedTests", item.id), {
-        status: next,
-        updatedAt: serverTimestamp(),
-      });
-      toast.success(next === "hidden" ? "Hidden" : "Visible");
-    } catch {
-      toast.error("Could not update status");
-    }
-  }
-
-  async function deleteImported(item: ImportedTestSeries) {
-    if (!uid) return;
-    const ok = window.confirm(`Delete "${item.title}"?`);
-    if (!ok) return;
-    try {
-      await deleteDoc(doc(db, "educators", uid, "importedTests", item.id));
-      toast.success("Deleted");
-    } catch {
-      toast.error("Could not delete");
-    }
-  }
-
-  async function importFromBank(test: BankTestSeries) {
-    if (!uid) {
-      toast.error("Please login as educator");
-      return;
-    }
-    try {
-      // Prevent duplicates by using bank test id as doc id
-      const ref = doc(db, "educators", uid, "importedTests", test.id);
-      const exists = await getDoc(ref);
-      if (exists.exists()) {
-        toast.info("Already imported");
-        return;
-      }
-
-      await setDoc(ref, {
-        title: test.title,
-        subject: test.subject,
-        testsCount: test.testsCount,
-        attempts: 0,
-        status: "active",
-        difficulty: test.difficulty,
-        source: "bank",
-        bankTestId: test.id,
+      // Step 1: Copy Metadata to nested collection
+      const newTestMetadata = {
+        ...bankTest,
+        authorId: currentUser.uid, // Now belongs to educator
+        originalTestId: bankTest.id, // Reference to original
+        source: "imported",
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      };
+      delete newTestMetadata.id; // Remove old ID
+
+      const newTestRef = await addDoc(collection(db, "educators", currentUser.uid, "my_tests"), newTestMetadata);
+
+      // Step 2: Fetch Original Questions
+      const questionsSnap = await getDocs(collection(db, "test_series", bankTest.id, "questions"));
+
+      // Step 3: Batch Write Questions to New Location
+      const batch = writeBatch(db);
+      questionsSnap.forEach((qDoc) => {
+        const newQRef = doc(collection(db, "educators", currentUser.uid, "my_tests", newTestRef.id, "questions"));
+        batch.set(newQRef, qDoc.data());
       });
 
-      toast.success("Imported successfully");
-    } catch {
-      toast.error("Could not import test series");
+      await batch.commit();
+      
+      toast.success("Test imported successfully to your library");
+      setActiveTab("library");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to import test");
+    } finally {
+      setImportingId(null);
     }
-  }
+  };
 
-  if (!uid) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-display font-bold">Test Series</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage your imported tests and explore new ones
-          </p>
-        </div>
-        <EmptyState
-          icon={FileText}
-          title="Please login as Educator"
-          description="You must be logged in to manage test series."
-          actionLabel="Go to Login"
-          onAction={() => (window.location.href = "/login?role=educator")}
-        />
-      </div>
-    );
-  }
+  // --- 3. Action: Create Custom Test ---
+  const handleCreateCustom = async (e: any) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    const fd = new FormData(e.target);
+    
+    const data = {
+      title: fd.get("title"),
+      description: fd.get("description"),
+      subject: fd.get("subject"),
+      level: fd.get("level"),
+      durationMinutes: Number(fd.get("duration")),
+      authorId: currentUser.uid,
+      source: "custom",
+      createdAt: serverTimestamp(),
+    };
+
+    try {
+      // 1. Add to local nested collection (The active copy)
+      await addDoc(collection(db, "educators", currentUser.uid, "my_tests"), data);
+      
+      // 2. Add to root collection (For global analytics/admin view, but marked private)
+      await addDoc(collection(db, "test_series"), { ...data, isPublic: false });
+
+      toast.success("Custom test created");
+      setSelectedTest(null); // Close modal
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to create test");
+    }
+  };
+
+  if (loading) return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 p-1">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold">Test Series</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage your imported tests and explore new ones
-          </p>
+          <h1 className="text-2xl font-bold">Test Series</h1>
+          <p className="text-muted-foreground">Manage your exams and import from the global bank.</p>
         </div>
-
-        <Button className="gradient-bg text-white" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Test
-        </Button>
+        
+        {/* Create Button Logic */}
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button className="gradient-bg text-white shadow-lg">
+              <Plus className="mr-2 h-4 w-4" /> Create Custom Test
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Create New Test</DialogTitle></DialogHeader>
+            <form onSubmit={handleCreateCustom} className="space-y-4 mt-2">
+               <div className="space-y-2">
+                 <Label>Title</Label>
+                 <Input name="title" required placeholder="e.g. Weekly Biology Mock" />
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                   <Label>Subject</Label>
+                   <Input name="subject" required />
+                 </div>
+                 <div className="space-y-2">
+                   <Label>Duration (Mins)</Label>
+                   <Input type="number" name="duration" required />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                  <Label>Level</Label>
+                  <Select name="level" defaultValue="Medium">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Easy">Easy</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="Hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+               </div>
+               <div className="space-y-2">
+                 <Label>Description</Label>
+                 <Textarea name="description" required />
+               </div>
+               <Button type="submit" className="w-full">Create & Start Adding Questions</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Create/Edit Dialog */}
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) resetDialog();
-        }}
-      >
-        <DialogContent className="rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Test Series" : "Create Test Series"}</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Title</div>
-              <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="E.g. CUET General Test Pack" />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Subject</div>
-                <Select value={formSubject} onValueChange={setFormSubject}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {["General", "English", "Maths", "Physics", "Chemistry", "Biology", "Accounts", "Business", "History", "Geography"].map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Difficulty</div>
-                <Select value={formDifficulty} onValueChange={(v) => setFormDifficulty(v as any)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Difficulty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Easy">Easy</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="Hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Tests Count</div>
-                <Input type="number" value={formTestsCount} onChange={(e) => setFormTestsCount(e.target.value)} />
-              </div>
-            </div>
-
-            <Button
-              className="w-full gradient-bg text-white"
-              onClick={saveCustomTestSeries}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : editingId ? "Update" : "Create"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Tabs defaultValue="imported" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="imported">Imported Tests</TabsTrigger>
-          <TabsTrigger value="explore">Explore Test Bank</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full sm:w-[400px] grid-cols-2">
+          <TabsTrigger value="library">My Library</TabsTrigger>
+          <TabsTrigger value="bank">Test Bank</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="imported" className="space-y-4">
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search tests..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
-            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-              <SelectTrigger className="w-full sm:w-52">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Subject" />
-              </SelectTrigger>
-              <SelectContent>
-                {subjectsForFilter.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s === "all" ? "All Subjects" : s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Imported Grid */}
-          {loadingImported ? (
-            <div className="flex items-center justify-center py-14 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading imported tests...
-            </div>
-          ) : filteredImported.length === 0 ? (
-            <EmptyState
-              icon={FileText}
-              title="No imported tests yet"
-              description="Import from the Test Bank or create a new test series."
-              actionLabel="Create Test"
-              onAction={openCreate}
-            />
+        {/* --- MY LIBRARY TAB --- */}
+        <TabsContent value="library" className="mt-6">
+          {myTests.length === 0 ? (
+            <EmptyState icon={FileText} title="No tests yet" description="Create a custom test or import one from the bank." />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredImported.map((test, index) => (
-                <motion.div
-                  key={test.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                >
-                  <Card className="card-hover h-full">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <Badge variant="secondary" className={difficultyBadgeClass(test.difficulty)}>
-                          {test.difficulty}
-                        </Badge>
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(test)}>
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem onClick={() => toggleVisibility(test)}>
-                              {test.status === "active" ? (
-                                <>
-                                  <EyeOff className="h-4 w-4 mr-2" />
-                                  Hide
-                                </>
-                              ) : (
-                                <>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  Show
-                                </>
-                              )}
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem className="text-destructive" onClick={() => deleteImported(test)}>
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-
-                      <div className="mt-2">
-                        <h3 className="font-semibold text-base line-clamp-2">{test.title}</h3>
-                        <p className="text-sm text-muted-foreground mt-1">{test.subject}</p>
-                      </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {myTests.map((test) => (
+                <motion.div key={test.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Card className="h-full flex flex-col hover:shadow-md transition-shadow">
+                    <CardHeader>
+                      <CardTitle className="flex justify-between items-start gap-2">
+                        <span className="truncate text-lg">{test.title}</span>
+                        {test.source === "imported" ? (
+                          <Badge variant="secondary" className="text-[10px]">Imported</Badge>
+                        ) : (
+                          <Badge className="text-[10px]">Custom</Badge>
+                        )}
+                      </CardTitle>
                     </CardHeader>
-
-                    <CardContent>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          <span>{test.testsCount} tests</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
-                          <span>{test.attempts}</span>
-                        </div>
+                    <CardContent className="flex-1 flex flex-col gap-4">
+                      <p className="text-sm text-muted-foreground line-clamp-2">{test.description}</p>
+                      
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground mt-auto">
+                        <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" /> {test.subject}</span>
+                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {test.durationMinutes}m</span>
                       </div>
 
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                        <Badge
-                          variant={test.status === "active" ? "default" : "secondary"}
-                          className={
-                            test.status === "active"
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : ""
-                          }
-                        >
-                          {test.status}
-                        </Badge>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toast.info("Manage screen coming next")}
-                        >
-                          Manage
+                      <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t">
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setSelectedTest(test);
+                          setIsManageOpen(true);
+                        }}>
+                          <Edit className="mr-2 h-3 w-3" /> Manage
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => {
+                           if(confirm("Delete this test?")) deleteDoc(doc(db, "educators", currentUser.uid, "my_tests", test.id));
+                        }}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </CardContent>
@@ -609,104 +256,243 @@ export default function TestSeries() {
           )}
         </TabsContent>
 
-        <TabsContent value="explore" className="space-y-4">
-          {/* Explore Filters */}
-          <div className="flex flex-wrap gap-2">
-            {(["All", "NEET", "JEE", "CUET", "Board Exams"] as const).map((filter) => (
-              <Button
-                key={filter}
-                variant={filter === bankFilter ? "default" : "outline"}
-                size="sm"
-                className={filter === bankFilter ? "gradient-bg text-white" : ""}
-                onClick={() => setBankFilter(filter)}
-              >
-                {filter}
-              </Button>
-            ))}
-          </div>
-
-          {/* Explore Grid */}
-          {loadingBank ? (
-            <div className="flex items-center justify-center py-14 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading test bank...
-            </div>
-          ) : bankTests.length === 0 ? (
-            <EmptyState
-              icon={FileText}
-              title="No test bank items yet"
-              description="Add documents to Firestore collection: testBank"
-              actionLabel="OK"
-              onAction={() => toast.info("Add docs in Firestore → testBank")}
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {bankTests.map((test, index) => (
-                <motion.div
-                  key={test.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                >
-                  <Card className="card-hover h-full flex flex-col">
-                    <div className="h-32 gradient-bg rounded-t-lg flex items-center justify-center">
-                      <FileText className="h-12 w-12 text-white/80" />
-                    </div>
-
-                    <CardContent className="flex-1 flex flex-col p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="secondary">{test.subject}</Badge>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            test.difficulty === "Hard" && "border-red-500 text-red-500",
-                            test.difficulty === "Medium" && "border-amber-500 text-amber-500",
-                            test.difficulty === "Easy" && "border-green-500 text-green-500"
-                          )}
-                        >
-                          {test.difficulty}
-                        </Badge>
+        {/* --- TEST BANK TAB --- */}
+        <TabsContent value="bank" className="mt-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {bankTests.map((test) => (
+                <Card key={test.id} className="bg-muted/30 border-dashed">
+                    <CardHeader>
+                      <CardTitle className="flex justify-between items-start">
+                        <span className="truncate">{test.title}</span>
+                        <Badge variant="outline">Admin</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-muted-foreground line-clamp-2">{test.description}</p>
+                      <div className="flex gap-2 text-xs text-muted-foreground">
+                         <span>{test.subject}</span> • <span>{test.level}</span>
                       </div>
-
-                      <h3 className="font-semibold text-sm line-clamp-2 mb-1">
-                        {test.title}
-                      </h3>
-
-                      <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-                        {test.description}
-                      </p>
-
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
-                        <FileText className="h-3 w-3" />
-                        <span>{test.testsCount} tests</span>
-                      </div>
-
-                      <div className="mt-auto flex items-center justify-between">
-                        <span
-                          className={cn(
-                            "font-semibold text-sm",
-                            test.price === "Included" ? "text-green-600" : "text-foreground"
-                          )}
-                        >
-                          {test.price}
-                        </span>
-                        <Button
-                          size="sm"
-                          className="gradient-bg text-white"
-                          onClick={() => importFromBank(test)}
-                        >
-                          Import
-                        </Button>
-                      </div>
+                      <Button 
+                        className="w-full" 
+                        disabled={importingId === test.id}
+                        onClick={() => handleImport(test)}
+                      >
+                        {importingId === test.id ? <Loader2 className="animate-spin h-4 w-4" /> : <><Download className="mr-2 h-4 w-4" /> Import to Library</>}
+                      </Button>
                     </CardContent>
-                  </Card>
-                </motion.div>
+                </Card>
               ))}
-            </div>
-          )}
+           </div>
         </TabsContent>
       </Tabs>
+
+      {/* --- Questions Manager Drawer/Modal --- */}
+      {isManageOpen && selectedTest && currentUser && (
+        <QuestionsManager 
+          testId={selectedTest.id}
+          // The critical part: Educator manages questions in THEIR nested collection
+          collectionPath={`educators/${currentUser.uid}/my_tests`}
+          onClose={() => setIsManageOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
+// --- SUB-COMPONENT: Questions Manager ---
+// This handles adding/editing questions specifically for the educator's copy of the test.
+function QuestionsManager({ testId, collectionPath, onClose }: { testId: string, collectionPath: string, onClose: () => void }) {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [editingQ, setEditingQ] = useState<Question | null>(null); // Null = Create Mode
+  const [loadingQ, setLoadingQ] = useState(true);
+
+  // Fetch Questions
+  useEffect(() => {
+    // collectionPath is like: "educators/{uid}/my_tests"
+    // We access the subcollection "questions" inside specific test document
+    const qRef = collection(db, collectionPath, testId, "questions");
+    
+    // Using snapshot for real-time updates as they edit
+    const unsub = onSnapshot(qRef, (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Question[];
+      // Optional: Sort by creation time if you added a timestamp field to questions, otherwise they might jump around
+      setQuestions(docs);
+      setLoadingQ(false);
+    });
+    return () => unsub();
+  }, [testId, collectionPath]);
+
+  const handleSaveQuestion = async (e: any) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    
+    const qData = {
+      text: fd.get("text") as string,
+      options: [
+        fd.get("opt1") as string, 
+        fd.get("opt2") as string, 
+        fd.get("opt3") as string, 
+        fd.get("opt4") as string
+      ],
+      correctOptionIndex: Number(fd.get("correctIdx")),
+      positiveMarks: Number(fd.get("pos")),
+      negativeMarks: Number(fd.get("neg")),
+    };
+
+    try {
+      const parentRef = collection(db, collectionPath, testId, "questions");
+      
+      if (editingQ) {
+        // Edit existing
+        await updateDoc(doc(parentRef, editingQ.id), qData);
+        toast.success("Question updated");
+      } else {
+        // Create new
+        await addDoc(parentRef, qData);
+        toast.success("Question added");
+      }
+      
+      setEditingQ(null);
+      e.target.reset(); // Reset form
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save question");
+    }
+  };
+
+  const handleDeleteQuestion = async (qId: string) => {
+    if(!confirm("Are you sure you want to delete this question?")) return;
+    try {
+      await deleteDoc(doc(db, collectionPath, testId, "questions", qId));
+      toast.success("Question deleted");
+      if (editingQ?.id === qId) setEditingQ(null);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-background w-full max-w-5xl h-[90vh] rounded-xl flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+        
+        {/* Header */}
+        <div className="p-4 border-b flex justify-between items-center bg-muted/30">
+          <div>
+            <h2 className="font-bold text-lg">Manage Questions</h2>
+            <p className="text-xs text-muted-foreground">Add or edit questions for this test series.</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-5 w-5" /></Button>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* Left: List of Questions */}
+          <div className="w-1/3 border-r flex flex-col bg-muted/10">
+             <div className="p-4 border-b">
+                <Button className="w-full" onClick={() => setEditingQ(null)}>
+                  <Plus className="mr-2 h-4 w-4" /> Add New Question
+                </Button>
+             </div>
+             
+             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+               {loadingQ ? (
+                 <div className="flex justify-center py-4"><Loader2 className="animate-spin text-muted-foreground" /></div>
+               ) : questions.length === 0 ? (
+                 <p className="text-center text-sm text-muted-foreground py-10">No questions added yet.</p>
+               ) : (
+                 questions.map((q, idx) => (
+                   <div key={q.id} 
+                     onClick={() => setEditingQ(q)}
+                     className={`p-3 rounded-lg border cursor-pointer text-sm hover:bg-accent transition-colors ${editingQ?.id === q.id ? 'border-primary bg-accent ring-1 ring-primary/20' : 'bg-card'}`}>
+                     <div className="font-medium line-clamp-2">Q{idx + 1}: {q.text}</div>
+                     <div className="text-xs text-muted-foreground mt-2 flex justify-between items-center">
+                        <Badge variant="outline" className="text-[10px] h-5">+{q.positiveMarks} / -{q.negativeMarks}</Badge>
+                        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(q.id); }} />
+                     </div>
+                   </div>
+                 ))
+               )}
+             </div>
+          </div>
+
+          {/* Right: Edit Form */}
+          <div className="flex-1 overflow-y-auto bg-background">
+             <div className="p-8 max-w-2xl mx-auto">
+                <form id="q-form" onSubmit={handleSaveQuestion} className="space-y-6">
+                   <div className="flex items-center justify-between">
+                     <h3 className="text-lg font-semibold flex items-center gap-2">
+                       {editingQ ? <><Edit className="h-4 w-4" /> Edit Question</> : <><Plus className="h-4 w-4" /> New Question</>}
+                     </h3>
+                     {editingQ && (
+                       <Button type="button" variant="ghost" size="sm" onClick={() => setEditingQ(null)}>Cancel</Button>
+                     )}
+                   </div>
+
+                   <div className="space-y-2">
+                      <Label>Question Text</Label>
+                      <Textarea 
+                        name="text" 
+                        defaultValue={editingQ?.text} 
+                        key={editingQ?.id || 'new-text'} // Force re-render on switch
+                        className="min-h-[100px] resize-none" 
+                        required 
+                        placeholder="Type the question content here..." 
+                      />
+                   </div>
+
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                     {[1, 2, 3, 4].map((i) => (
+                       <div key={i} className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                            Option {i}
+                            {editingQ && editingQ.correctOptionIndex === (i-1) && <Check className="h-3 w-3 text-green-600" />}
+                          </Label>
+                          <Input 
+                            name={`opt${i}`} 
+                            defaultValue={editingQ?.options?.[i-1]} 
+                            key={editingQ?.id || `new-opt${i}`}
+                            required 
+                            placeholder={`Option ${i}`} 
+                          />
+                       </div>
+                     ))}
+                   </div>
+
+                   <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg border">
+                      <div className="space-y-1.5">
+                         <Label>Correct Option</Label>
+                         <Select name="correctIdx" defaultValue={editingQ ? String(editingQ.correctOptionIndex) : "0"} key={editingQ?.id || 'new-select'}>
+                           <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="0">Option 1</SelectItem>
+                             <SelectItem value="1">Option 2</SelectItem>
+                             <SelectItem value="2">Option 3</SelectItem>
+                             <SelectItem value="3">Option 4</SelectItem>
+                           </SelectContent>
+                         </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                         <Label className="text-green-600 font-medium">Positive Marks</Label>
+                         <Input type="number" name="pos" defaultValue={editingQ?.positiveMarks || 4} key={editingQ?.id || 'new-pos'} min={0} className="bg-background" />
+                      </div>
+                      <div className="space-y-1.5">
+                         <Label className="text-red-600 font-medium">Negative Marks</Label>
+                         <Input type="number" name="neg" defaultValue={editingQ?.negativeMarks || 1} key={editingQ?.id || 'new-neg'} min={0} className="bg-background" />
+                      </div>
+                   </div>
+
+                   <div className="flex justify-end pt-4 border-t">
+                     <Button type="submit" className="min-w-[140px]">
+                       <Save className="mr-2 h-4 w-4" />
+                       Save Question
+                     </Button>
+                   </div>
+                </form>
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
