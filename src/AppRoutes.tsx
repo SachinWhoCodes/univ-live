@@ -20,6 +20,13 @@ import Pricing from "@/pages/Pricing";
 
 import AdminTestManager from "./pages/AdminTestManager";
 
+// ✅ Admin pages you added in /pages/admin
+import AdminDashboard from "@/pages/admin/Dashboard";
+import AdminQuestions from "@/pages/admin/Questions";
+import AdminTestBank from "@/pages/admin/TestBank";
+import AdminTestForm from "@/pages/admin/TestForm";
+import AdminLayout from "./pages/admin/AdminLayout";
+
 // Educator Dashboard
 import EducatorLayout from "@/components/educator/EducatorLayout";
 import EducatorDashboard from "@/pages/educator/Dashboard";
@@ -115,6 +122,26 @@ export default function AppRoutes() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+
+
+          {/* ✅ Admin Panel */}
+        <Route
+          path="/admin"
+          element={
+            <RequireRole allow={["ADMIN"]}>
+              <AdminLayout />
+            </RequireRole>
+          }
+        >
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+
+          {/* Keeping your current lovable routes to avoid changing your files */}
+          <Route path="testbank" element={<AdminTestBank />} />
+          <Route path="test/new" element={<AdminTestForm />} />
+          <Route path="test/edit/:id" element={<AdminTestForm />} />
+          <Route path="questions/:testId" element={<AdminQuestions />} />
+        </Route>
 
           {/* Main Platform Educator Dashboard */}
           <Route
