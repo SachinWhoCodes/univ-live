@@ -125,7 +125,7 @@ export default function Theme1Layout({ children }: Theme1LayoutProps) {
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            <Link to="/login">
+            <Link to="/login?role=student">
               <Button variant="ghost">Login</Button>
             </Link>
             <Link to="/signup">
