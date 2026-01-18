@@ -59,6 +59,7 @@ const Index = () => {
 
   // 🟢 GLOBAL HOMEPAGE (univ.live)
   return (
+     <div className="min-h-screen bg-background">
     <Layout>
       <HeroSection />
       <DashboardPreview />
@@ -71,6 +72,7 @@ const Index = () => {
       <FAQSection />
       <CTASection />
     </Layout>
+    </div>
   );
 };
 
