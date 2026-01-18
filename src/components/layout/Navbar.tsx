@@ -13,6 +13,7 @@ const navLinks = [
   { name: "Blog", path: "/blog" },
 ];
 
+// ✅ keep named export (for Layout.tsx and other existing imports)
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -97,7 +98,11 @@ export function Navbar() {
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="md:hidden p-2 text-foreground"
         >
-          {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          {isMobileMenuOpen ? (
+            <X className="h-6 w-6" />
+          ) : (
+            <Menu className="h-6 w-6" />
+          )}
         </button>
       </nav>
 
@@ -126,7 +131,11 @@ export function Navbar() {
                 </Link>
               ))}
               <Link to="/contact" className="mt-2">
-                <ButtonWithIcon variant="heroOutline" size="default" className="w-full justify-center">
+                <ButtonWithIcon
+                  variant="heroOutline"
+                  size="default"
+                  className="w-full justify-center"
+                >
                   Contact Us
                 </ButtonWithIcon>
               </Link>
@@ -137,3 +146,6 @@ export function Navbar() {
     </header>
   );
 }
+
+// ✅ add default export so `import Navbar from ...` works too
+export default Navbar;
