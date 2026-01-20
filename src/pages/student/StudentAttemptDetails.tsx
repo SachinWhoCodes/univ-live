@@ -53,23 +53,35 @@ function safeNumber(v: any, fallback: number) {
 
 function mapQuestion(id: string, data: any): AttemptQuestion {
   const opts: string[] = Array.isArray(data.options) ? data.options : [];
-  const correctIndex = safeNumber(data.correctOptionIndex, 0);
 
-  const positive = safeNumber(data.positiveMarks, 4);
-  const negative = safeNumber(data.negativeMarks, 1);
+  const correctIndex = safeNumber(
+    data.correctOption ?? data.correctOptionIndex,
+    0
+  );
+
+  const positive = safeNumber(
+    data.marks ?? data.positiveMarks,
+    4
+  );
+
+  const negative = safeNumber(
+    data.negativeMarks,
+    1
+  );
 
   return {
     id,
     sectionId: data.sectionId || "main",
-    type: data.type === "integer" ? "integer" : "mcq",
-    stem: data.text || "",
+    type: "mcq",
+    stem: data.question || data.text || "",   // ✅ FIX
     options: opts.map((t, i) => ({ id: String(i), text: String(t) })),
-    correctAnswer: data.type === "integer" ? String(data.correctAnswer ?? "") : String(correctIndex),
+    correctAnswer: String(correctIndex),
     explanation: data.explanation || "",
     marks: { correct: positive, incorrect: Math.abs(negative) },
     passage: data.passage || null,
   };
 }
+
 
 function isAnswered(val: any) {
   return val !== null && val !== undefined && String(val).trim() !== "";

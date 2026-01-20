@@ -105,8 +105,9 @@ function computeFromQuestionsAndResponses(
   for (const q of questions) {
     const d = q.data;
     const sectionId = d.sectionId || "main";
-    const pos = safeNumber(d.positiveMarks, 4);
+    const pos = safeNumber((d as any).marks ?? d.positiveMarks, 4);
     const neg = Math.abs(safeNumber(d.negativeMarks, 1));
+
 
     maxScore += pos;
     perSection[sectionId] = perSection[sectionId] || { score: 0, maxScore: 0 };
@@ -122,7 +123,8 @@ function computeFromQuestionsAndResponses(
     if (type === "integer") {
       isCorrect = String(userAnswer).trim() === String(d.correctAnswer ?? "").trim();
     } else {
-      isCorrect = String(userAnswer) === String(safeNumber(d.correctOptionIndex, 0));
+      isCorrect = String(userAnswer) === String((d as any).correctOption ?? d.correctOptionIndex ?? 0)
+;
     }
 
     if (isCorrect) {
