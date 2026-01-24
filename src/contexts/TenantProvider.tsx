@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getTenantSlugFromHostname } from "@/lib/tenant";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { useAuth } from "@/contexts/AuthProvider";
+import { collection, getDocs, limit, query, where } from "firebase/firestore";
 
 export type TenantProfile = {
   educatorId: string;
@@ -17,64 +16,65 @@ export type TenantProfile = {
 type TenantContextValue = {
   tenant: TenantProfile | null;
   tenantSlug: string | null;
-  loading: boolean;
   isTenantDomain: boolean;
+  loading: boolean;
 };
 
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  // We strictly use AuthProvider here just to ensure context is ready
-  const { } = useAuth(); 
-  
+  const [tenantSlug, setTenantSlug] = useState<string | null>(null);
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isTenantDomain, setIsTenantDomain] = useState(false);
 
-  const tenantSlug = getTenantSlugFromHostname();
-  const isTenantDomain = !!tenantSlug;
-
-  // 1. Load Tenant Data
   useEffect(() => {
-    let mounted = true;
-    async function loadTenant() {
-      setLoading(true);
-      setTenant(null);
-      
-      // If we are on main domain, nothing to load
+    const slug = getTenantSlugFromHostname(window.location.hostname);
+    setTenantSlug(slug);
+    setIsTenantDomain(Boolean(slug));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
       if (!tenantSlug) {
+        setTenant(null);
         setLoading(false);
         return;
       }
-
+      setLoading(true);
       try {
-        const q = query(collection(db, "educators"), where("tenantSlug", "==", tenantSlug));
-        const snaps = await getDocs(q);
-        
-        if (mounted && !snaps.empty) {
-          const d = snaps.docs[0].data() as any;
+        const q = query(collection(db, "educators"), where("tenantSlug", "==", tenantSlug), limit(1));
+        const snap = await getDocs(q);
+
+        if (!alive) return;
+
+        if (snap.empty) {
+          setTenant(null);
+        } else {
+          const docSnap = snap.docs[0];
+          const data: any = docSnap.data() || {};
           setTenant({
-            educatorId: snaps.docs[0].id,
-            tenantSlug: d.tenantSlug, 
-            coachingName: d.coachingName,
-            tagline: d.tagline,
-            contact: d.contact,
-            socials: d.socials,
-            websiteConfig: d.websiteConfig,
+            educatorId: docSnap.id,
+            tenantSlug,
+            coachingName: data.coachingName,
+            tagline: data.tagline,
+            contact: data.contact,
+            socials: data.socials,
+            websiteConfig: data.websiteConfig,
           });
         }
-      } catch (err) {
-        console.error("Failed to load tenant", err);
       } finally {
-        if (mounted) setLoading(false);
+        if (alive) setLoading(false);
       }
     }
 
-    loadTenant();
-    return () => { mounted = false; };
+    load();
+    return () => {
+      alive = false;
+    };
   }, [tenantSlug]);
-
-  // 🚨 CRITICAL: The security useEffect that was here is REMOVED.
-  // Security is now handled exclusively by StudentRoute.tsx
 
   const value: TenantContextValue = {
     tenant,
@@ -91,3 +91,4 @@ export function useTenant() {
   if (!ctx) throw new Error("useTenant must be used within TenantProvider");
   return ctx;
 }
+

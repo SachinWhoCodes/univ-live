@@ -10,8 +10,8 @@ export type AppUserProfile = {
   uid: string;
   role: UserRole;
   educatorId?: string;
-  tenantSlug?: string;         // ✅ KEPT for backward compatibility
-  enrolledTenants?: string[];  // ✅ NEW: Array of slugs
+  tenantSlug?: string;         // legacy
+  enrolledTenants?: string[];  // preferred
   displayName?: string;
   email?: string;
 };
@@ -20,41 +20,33 @@ type AuthContextValue = {
   firebaseUser: User | null;
   profile: AppUserProfile | null;
   loading: boolean;
-  isAuthed: boolean;
+  uid: string | null;
   role: UserRole | null;
-  educatorId: string | null;
-  tenantSlug: string | null;
-  enrolledTenants: string[]; 
+  enrolledTenants: string[];
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function fetchProfile(uid: string): Promise<AppUserProfile | null> {
+async function loadProfile(uid: string): Promise<AppUserProfile | null> {
   const ref = doc(db, "users", uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
-  const data = snap.data() as any;
 
-  const role = data.role as UserRole | undefined;
-  if (role !== "ADMIN" && role !== "EDUCATOR" && role !== "STUDENT") return null;
+  const data: any = snap.data() || {};
+  const rawRole = String(data.role || "STUDENT").toUpperCase();
+  const role: UserRole = rawRole === "ADMIN" || rawRole === "EDUCATOR" ? rawRole : "STUDENT";
 
-  // --- 🛡️ SAFETY LOGIC START ---
-  // If database has array, use it. If not, use the old string wrapped in an array.
   let enrolledTenants: string[] = [];
-  
-  if (Array.isArray(data.enrolledTenants)) {
-    enrolledTenants = data.enrolledTenants;
-  } else if (typeof data.tenantSlug === "string") {
-    enrolledTenants = [data.tenantSlug]; // <--- This saves old users!
-  }
-  // --- 🛡️ SAFETY LOGIC END ---
+  if (Array.isArray(data.enrolledTenants)) enrolledTenants = data.enrolledTenants;
+  else if (typeof data.tenantSlug === "string") enrolledTenants = [data.tenantSlug];
 
   return {
     uid,
     role,
     educatorId: typeof data.educatorId === "string" ? data.educatorId : undefined,
     tenantSlug: typeof data.tenantSlug === "string" ? data.tenantSlug : undefined,
-    enrolledTenants, // Always returns an array now
+    enrolledTenants,
     displayName: typeof data.displayName === "string" ? data.displayName : undefined,
     email: typeof data.email === "string" ? data.email : undefined,
   };
@@ -64,6 +56,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AppUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshProfile = async () => {
+    if (!firebaseUser) return;
+    const p = await loadProfile(firebaseUser.uid);
+    setProfile(p);
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -75,10 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setLoading(true);
       try {
-        const p = await fetchProfile(u.uid);
+        const p = await loadProfile(u.uid);
         setProfile(p);
-      } catch {
-        setProfile(null);
       } finally {
         setLoading(false);
       }
@@ -91,11 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       firebaseUser,
       profile,
       loading,
-      isAuthed: !!firebaseUser,
+      uid: firebaseUser?.uid ?? null,
       role: profile?.role ?? null,
-      educatorId: profile?.educatorId ?? null,
-      tenantSlug: profile?.tenantSlug ?? null,
       enrolledTenants: profile?.enrolledTenants || [],
+      refreshProfile,
     };
   }, [firebaseUser, profile, loading]);
 
@@ -107,3 +102,4 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
+
