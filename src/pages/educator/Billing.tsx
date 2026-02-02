@@ -14,6 +14,7 @@ declare global {
   }
 }
 
+// Helper to load Razorpay SDK
 function loadRazorpayScript(): Promise<boolean> {
   return new Promise((resolve) => {
     if (window.Razorpay) return resolve(true);
@@ -35,18 +36,23 @@ export default function Billing() {
   const [busy, setBusy] = useState(false);
   const [usedSeats, setUsedSeats] = useState(0);
 
+  // 1. Redirect if not Educator
   useEffect(() => {
     if (!authLoading && role && role !== "EDUCATOR" && role !== "ADMIN") nav("/login?role=educator");
   }, [authLoading, role, nav]);
 
+  // 2. Listen to Subscription & Seat Data
   useEffect(() => {
     if (!educatorId) return;
+    
+    // Listen to subscription status
     const unsub = onSnapshot(doc(db, "educators", educatorId, "billing", "subscription"), (snap) => {
       const d = snap.exists() ? snap.data() : null;
       setSub(d);
       if (d?.quantity) setSeatLimit(Number(d.quantity));
     });
 
+    // Listen to active seat count
     const unsubSeats = onSnapshotCol(collection(db, "educators", educatorId, "billingSeats"), (snap) => {
       let c = 0;
       snap.docs.forEach((d) => {
@@ -62,6 +68,7 @@ export default function Billing() {
     };
   }, [educatorId]);
 
+  // Derived state
   const status = String(sub?.status || "none");
   const subId = String(sub?.razorpaySubscriptionId || "");
   const planKey = String(sub?.planKey || "");
@@ -83,6 +90,7 @@ export default function Billing() {
     return false;
   }, [status, sub]);
 
+  // Helper for API calls
   async function postWithToken(path: string, body: any) {
     if (!firebaseUser) throw new Error("Not logged in");
     const token = await firebaseUser.getIdToken();
@@ -96,72 +104,56 @@ export default function Billing() {
     return data;
   }
 
-
-  // inside Billing.tsx
-
+  // --- CORE CHECKOUT LOGIC ---
   const startCheckout = async (planKey: string) => {
-      setBusy(true);
-      try {
-        // 1. Create Subscription
-        const res = await fetch("/api/billing/create-subscription", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${await firebaseUser?.getIdToken()}` 
-          },
-          body: JSON.stringify({ planKey, quantity: seatLimit }),
-        });
+    setBusy(true);
+    try {
+      // A. Load Razorpay Script FIRST
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded) throw new Error("Razorpay SDK failed to load. Check your internet.");
+
+      // B. Create Subscription on Backend
+      const data = await postWithToken("/api/billing/create-subscription", { 
+        planKey, 
+        quantity: seatLimit 
+      });
+
+      // C. Open Razorpay Payment Popup
+      const options = {
+        key: data.keyId,
+        subscription_id: data.subscriptionId,
+        name: "Univ.Live",
+        description: `${planKey} Plan Subscription`,
         
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        // D. Handle Success
+        handler: async function (response: any) {
+          try {
+            // Call Verification API
+            await postWithToken("/api/billing/verify-payment", {
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_signature: response.razorpay_signature
+            });
+            
+            toast.success("Payment verified! Plan activated.");
+            window.location.reload(); 
+          } catch (err) {
+            console.error(err);
+            toast.error("Payment successful, but verification failed.");
+          }
+        },
+      };
 
-        // 2. Open Razorpay
-        const options = {
-          key: data.keyId,
-          subscription_id: data.subscriptionId,
-          name: "Univ.Live",
-          description: `${planKey} Plan Subscription`,
-          
-          // THIS IS THE IMPORTANT PART:
-          handler: async function (response: any) {
-            try {
-              // 3. Call the "Match and Confirm" API
-              const verifyRes = await fetch("/api/billing/verify-payment", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${await firebaseUser?.getIdToken()}`
-                },
-                body: JSON.stringify({
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_subscription_id: response.razorpay_subscription_id,
-                  razorpay_signature: response.razorpay_signature
-                })
-              });
+      const rzp = new window.Razorpay(options);
+      rzp.open();
 
-              if (verifyRes.ok) {
-                toast.success("Payment verified! Plan activated.");
-                window.location.reload(); // Reload to refresh UI with new data
-              } else {
-                toast.error("Payment successful, but verification failed. Please contact support.");
-              }
-            } catch (err) {
-              console.error(err);
-              toast.error("Verification error");
-            }
-          },
-          
-        };
-
-        const rzp = new window.Razorpay(options);
-        rzp.open();
-      } catch (e: any) {
-        toast.error(e.message);
-      } finally {
-        setBusy(false);
-      }
-    };
-
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const updateQuantity = async () => {
     setBusy(true);
@@ -178,7 +170,7 @@ export default function Billing() {
   if (authLoading || !role) {
     return (
       <div className="p-6 flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading...
       </div>
     );
   }
@@ -216,8 +208,6 @@ export default function Billing() {
         {!subId && <div className="text-sm text-muted-foreground">Buy a plan first to enable quantity updates.</div>}
       </div>
 
-      {/* ... inside your return statement ... */}
-
       <div className="grid gap-6 md:grid-cols-3">
         {/* ESSENTIAL PLAN */}
         <div className="border rounded-xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
@@ -233,11 +223,7 @@ export default function Billing() {
             <li>✓ Upload your own content</li>
             <li>✓ Email support</li>
           </ul>
-          <Button 
-            className="w-full" 
-            disabled={busy} 
-            onClick={() => startCheckout("ESSENTIAL")}
-          >
+          <Button className="w-full" disabled={busy} onClick={() => startCheckout("ESSENTIAL")}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Start Essential Trial
           </Button>
@@ -261,11 +247,7 @@ export default function Billing() {
             <li>✓ Exclusive WhatsApp teacher community</li>
             <li>✓ Complete post-CUET support</li>
           </ul>
-          <Button 
-            className="w-full" 
-            disabled={busy} 
-            onClick={() => startCheckout("GROWTH")}
-          >
+          <Button className="w-full" disabled={busy} onClick={() => startCheckout("GROWTH")}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Start Growth Trial
           </Button>
@@ -292,4 +274,3 @@ export default function Billing() {
     </div>
   );
 }
-
