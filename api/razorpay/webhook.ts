@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import crypto from "crypto";
-import { getAdmin } from "../_lib/firebaseAdmin";
-import { readRawBody } from "../_lib/readRawBody";
+import { getAdmin } from "../_lib/firebaseAdmin.js";
+import { readRawBody } from "../_lib/readRawBody.js";
 
 function pickEducatorId(event: any): string {
   return (

@@ -96,34 +96,72 @@ export default function Billing() {
     return data;
   }
 
-  const startCheckout = async (plan: "ESSENTIAL" | "GROWTH") => {
-    setBusy(true);
-    try {
-      const ok = await loadRazorpayScript();
-      if (!ok) throw new Error("Failed to load Razorpay");
 
-      const data = await postWithToken("/api/billing/create-subscription", {
-        planKey: plan,
-        quantity: Math.max(1, Math.floor(seatLimit || 1)),
-      });
+  // inside Billing.tsx
 
-      const options = {
-        key: data.keyId,
-        name: "UNIV.LIVE",
-        description: `${plan} plan`,
-        subscription_id: data.subscriptionId,
-        handler: () => toast.success("Checkout completed. Webhook will update status shortly."),
-        modal: { ondismiss: () => toast("Checkout closed") },
-      };
+  const startCheckout = async (planKey: string) => {
+      setBusy(true);
+      try {
+        // 1. Create Subscription
+        const res = await fetch("/api/billing/create-subscription", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${await firebaseUser?.getIdToken()}` 
+          },
+          body: JSON.stringify({ planKey, quantity: seatLimit }),
+        });
+        
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
 
-      const rz = new window.Razorpay(options);
-      rz.open();
-    } catch (e: any) {
-      toast.error(e?.message || "Checkout failed");
-    } finally {
-      setBusy(false);
-    }
-  };
+        // 2. Open Razorpay
+        const options = {
+          key: data.keyId,
+          subscription_id: data.subscriptionId,
+          name: "Univ.Live",
+          description: `${planKey} Plan Subscription`,
+          
+          // THIS IS THE IMPORTANT PART:
+          handler: async function (response: any) {
+            try {
+              // 3. Call the "Match and Confirm" API
+              const verifyRes = await fetch("/api/billing/verify-payment", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${await firebaseUser?.getIdToken()}`
+                },
+                body: JSON.stringify({
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_subscription_id: response.razorpay_subscription_id,
+                  razorpay_signature: response.razorpay_signature
+                })
+              });
+
+              if (verifyRes.ok) {
+                toast.success("Payment verified! Plan activated.");
+                window.location.reload(); // Reload to refresh UI with new data
+              } else {
+                toast.error("Payment successful, but verification failed. Please contact support.");
+              }
+            } catch (err) {
+              console.error(err);
+              toast.error("Verification error");
+            }
+          },
+          
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      } catch (e: any) {
+        toast.error(e.message);
+      } finally {
+        setBusy(false);
+      }
+    };
+
 
   const updateQuantity = async () => {
     setBusy(true);
@@ -178,22 +216,76 @@ export default function Billing() {
         {!subId && <div className="text-sm text-muted-foreground">Buy a plan first to enable quantity updates.</div>}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="border rounded-lg p-4 space-y-2">
-          <div className="font-semibold">ESSENTIAL</div>
-          <div className="text-sm text-muted-foreground">Basic plan with seat limit control.</div>
-          <Button disabled={busy} onClick={() => startCheckout("ESSENTIAL")}>
+      {/* ... inside your return statement ... */}
+
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* ESSENTIAL PLAN */}
+        <div className="border rounded-xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
+          <div>
+            <h3 className="text-xl font-bold">Essential</h3>
+            <div className="text-3xl font-bold mt-2">₹169<span className="text-sm font-normal text-muted-foreground">/seat</span></div>
+            <p className="text-sm text-green-600 font-medium mt-1">Includes 5-Day Free Trial</p>
+          </div>
+          <ul className="text-sm space-y-2 text-muted-foreground flex-1">
+            <li>✓ No restriction on subject selection</li>
+            <li>✓ 10 CBT tests per subject</li>
+            <li>✓ AI-powered advanced analytics</li>
+            <li>✓ Upload your own content</li>
+            <li>✓ Email support</li>
+          </ul>
+          <Button 
+            className="w-full" 
+            disabled={busy} 
+            onClick={() => startCheckout("ESSENTIAL")}
+          >
             {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Buy / Start Trial
+            Start Essential Trial
           </Button>
         </div>
 
-        <div className="border rounded-lg p-4 space-y-2">
-          <div className="font-semibold">GROWTH</div>
-          <div className="text-sm text-muted-foreground">Higher plan for scaling coaching.</div>
-          <Button disabled={busy} onClick={() => startCheckout("GROWTH")}>
+        {/* GROWTH PLAN */}
+        <div className="border border-primary/50 rounded-xl p-6 flex flex-col gap-4 shadow-md bg-primary/5 relative">
+          <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-bl-lg font-medium">
+            MOST POPULAR
+          </div>
+          <div>
+            <h3 className="text-xl font-bold">Growth</h3>
+            <div className="text-3xl font-bold mt-2">₹199<span className="text-sm font-normal text-muted-foreground">/seat</span></div>
+            <p className="text-sm text-green-600 font-medium mt-1">Includes 5-Day Free Trial</p>
+          </div>
+          <ul className="text-sm space-y-2 text-muted-foreground flex-1">
+            <li className="font-medium text-foreground">Everything in Essential, PLUS:</li>
+            <li>✓ Priority call & chat support</li>
+            <li>✓ Personalised Preference Sheet</li>
+            <li>✓ 1-on-1 mentorship sessions</li>
+            <li>✓ Exclusive WhatsApp teacher community</li>
+            <li>✓ Complete post-CUET support</li>
+          </ul>
+          <Button 
+            className="w-full" 
+            disabled={busy} 
+            onClick={() => startCheckout("GROWTH")}
+          >
             {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Buy / Start Trial
+            Start Growth Trial
+          </Button>
+        </div>
+
+        {/* EXECUTIVE PLAN */}
+        <div className="border rounded-xl p-6 flex flex-col gap-4 shadow-sm opacity-80">
+          <div>
+            <h3 className="text-xl font-bold">Executive</h3>
+            <div className="text-xl font-bold mt-2">Custom Pricing</div>
+            <p className="text-sm text-muted-foreground mt-1">For large institutions</p>
+          </div>
+          <ul className="text-sm space-y-2 text-muted-foreground flex-1">
+            <li>✓ Custom Integrations</li>
+            <li>✓ White-labeling options</li>
+            <li>✓ Dedicated Account Manager</li>
+            <li>✓ Bulk pricing discounts</li>
+          </ul>
+          <Button variant="outline" className="w-full" onClick={() => window.open("mailto:sales@univ.live")}>
+            Contact Sales
           </Button>
         </div>
       </div>

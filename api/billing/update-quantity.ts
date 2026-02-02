@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdmin } from "../_lib/firebaseAdmin";
-import { requireUser } from "../_lib/requireUser";
-import { razorpayRequest } from "../_lib/razorpayRequest";
+import { getAdmin } from "../_lib/firebaseAdmin.js";
+import { requireUser } from "../_lib/requireUser.js";
+import { razorpayRequest } from "../_lib/razorpayRequest.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
