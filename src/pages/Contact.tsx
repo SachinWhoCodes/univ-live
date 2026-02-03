@@ -1,6 +1,6 @@
 import { Layout } from "@/components/layout/Layout";
 import { motion } from "framer-motion";
-import { Mail, Phone, MapPin, Send } from "lucide-react";
+import { Mail, Phone, Clock } from "lucide-react";
 import { ButtonWithIcon } from "@/components/ui/button";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +10,8 @@ const Contact = () => {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    subject: "",
+    phone: "",
+    coachingCenter: "",
     message: "",
   });
 
@@ -20,7 +21,7 @@ const Contact = () => {
       title: "Message sent!",
       description: "We'll get back to you within 24 hours.",
     });
-    setFormData({ name: "", email: "", subject: "", message: "" });
+    setFormData({ name: "", email: "", phone: "", coachingCenter: "", message: "" });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -29,61 +30,82 @@ const Contact = () => {
 
   return (
     <Layout>
-      <section className="section-padding">
+      <section className="section-padding section-1">
         <div className="container-main">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20">
+          <motion.div
+            className="text-center max-w-3xl mx-auto mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
+              Contact <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">Us</span>
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Have questions or need support? We're here to help.
+            </p>
+          </motion.div>
+
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 max-w-5xl mx-auto">
             {/* Left - Info */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
-                Get in <span className="text-primary">Touch</span>
-              </h1>
-              <p className="text-lg text-muted-foreground mb-10">
-                Have questions about LearnFlow? We'd love to hear from you. Send us a message
-                and we'll respond as soon as possible.
-              </p>
-
-              <div className="space-y-6">
+              <div className="space-y-8">
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Mail className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <div className="font-semibold mb-1">Email</div>
-                    <a href="mailto:hello@learnflow.com" className="text-muted-foreground hover:text-primary transition-colors">
-                      hello@learnflow.com
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center shrink-0">
                     <Phone className="h-5 w-5 text-primary" />
                   </div>
                   <div>
                     <div className="font-semibold mb-1">Phone</div>
-                    <a href="tel:+1234567890" className="text-muted-foreground hover:text-primary transition-colors">
-                      +1 (234) 567-890
+                    <a href="tel:+919625394589" className="text-muted-foreground hover:text-primary transition-colors">
+                      +91 96253 94589
                     </a>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <MapPin className="h-5 w-5 text-primary" />
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center shrink-0">
+                    <Mail className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <div className="font-semibold mb-1">Office</div>
+                    <div className="font-semibold mb-1">Email</div>
+                    <a href="mailto:info.univlive@gmail.com" className="text-muted-foreground hover:text-primary transition-colors">
+                      info.univlive@gmail.com
+                    </a>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center shrink-0">
+                    <Clock className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <div className="font-semibold mb-1">Support Available</div>
                     <p className="text-muted-foreground">
-                      123 Innovation Drive<br />
-                      San Francisco, CA 94105
+                      10:00 AM – 10:00 PM
                     </p>
                   </div>
                 </div>
               </div>
+
+              {/* CTA Card */}
+              <motion.div
+                className="mt-12 bg-gradient-to-br from-primary/10 to-accent/10 rounded-2xl p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+              >
+                <h3 className="font-bold text-lg mb-2">Book a Demo</h3>
+                <p className="text-muted-foreground text-sm mb-4">
+                  See how Univ.live can transform your coaching center's CUET preparation.
+                </p>
+                <ButtonWithIcon variant="hero" size="default">
+                  Schedule Demo
+                </ButtonWithIcon>
+              </motion.div>
             </motion.div>
 
             {/* Right - Form */}
@@ -109,7 +131,7 @@ const Contact = () => {
                       onChange={handleChange}
                       required
                       className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                      placeholder="John Doe"
+                      placeholder="Your name"
                     />
                   </div>
 
@@ -125,23 +147,38 @@ const Contact = () => {
                       onChange={handleChange}
                       required
                       className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                      placeholder="john@example.com"
+                      placeholder="your@email.com"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="subject" className="block text-sm font-medium mb-2">
-                      Subject
+                    <label htmlFor="phone" className="block text-sm font-medium mb-2">
+                      Phone Number
                     </label>
                     <input
-                      type="text"
-                      id="subject"
-                      name="subject"
-                      value={formData.subject}
+                      type="tel"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
                       onChange={handleChange}
                       required
                       className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                      placeholder="How can we help?"
+                      placeholder="+91 XXXXX XXXXX"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="coachingCenter" className="block text-sm font-medium mb-2">
+                      Coaching Center Name
+                    </label>
+                    <input
+                      type="text"
+                      id="coachingCenter"
+                      name="coachingCenter"
+                      value={formData.coachingCenter}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                      placeholder="Your coaching center"
                     />
                   </div>
 
@@ -155,9 +192,9 @@ const Contact = () => {
                       value={formData.message}
                       onChange={handleChange}
                       required
-                      rows={5}
+                      rows={4}
                       className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none"
-                      placeholder="Tell us more about your inquiry..."
+                      placeholder="How can we help you?"
                     />
                   </div>
 

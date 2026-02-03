@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Nunito:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,65 +6,68 @@
 
 @layer base {
   :root {
-    --background: 30 50% 98%;
-    --foreground: 220 20% 15%;
+    /* --- NEW VERSION VARIABLES (Overwritten) --- */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 15%;
+    --card-foreground: 240 10% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 15%;
+    --popover-foreground: 240 10% 10%;
 
-    --primary: 24 100% 50%;
+    --primary: 245 82% 67%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 30 30% 96%;
-    --secondary-foreground: 220 20% 15%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 10% 10%;
 
-    --muted: 30 20% 94%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 5% 45%;
 
-    --accent: 24 100% 50%;
+    --accent: 263 70% 58%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 30 20% 90%;
-    --input: 30 20% 90%;
-    --ring: 24 100% 50%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 245 82% 67%;
 
     --radius: 1rem;
 
-    /* Custom colors */
-    --orange: 24 100% 50%;
-    --orange-light: 24 100% 95%;
-    --orange-dark: 24 100% 40%;
+    /* New Custom Colors */
+    --indigo: 245 82% 67%;
+    --indigo-light: 245 82% 96%;
+    --indigo-dark: 245 82% 55%;
     
-    --peach: 25 80% 95%;
-    --peach-medium: 25 60% 90%;
+    --violet: 263 70% 58%;
+    --violet-light: 263 70% 96%;
     
-    --gray-text: 220 10% 45%;
-    --gray-light: 220 20% 96%;
+    --section-1: 0 0% 100%;
+    --section-2: 240 5% 98%;
+    --section-3: 245 40% 98%;
+    --section-4: 263 40% 98%;
+    --section-5: 200 40% 98%;
     
-    /* Gradients */
-    --gradient-pastel: linear-gradient(135deg, 
-      hsl(350 60% 97%) 0%, 
-      hsl(30 50% 98%) 25%,
-      hsl(200 60% 97%) 50%,
-      hsl(30 60% 96%) 75%,
-      hsl(350 50% 97%) 100%
+    --gray-text: 240 5% 45%;
+    --gray-light: 240 5% 96%;
+
+    /* New Gradients */
+    --gradient-primary: linear-gradient(135deg, 
+      hsl(245 82% 67%) 0%, 
+      hsl(263 70% 58%) 100%
     );
     
     --gradient-hero: linear-gradient(180deg,
-      hsl(350 60% 97%) 0%,
-      hsl(30 50% 98%) 50%,
-      hsl(200 50% 97%) 100%
+      hsl(0 0% 100%) 0%,
+      hsl(245 40% 99%) 100%
     );
 
-    --shadow-soft: 0 4px 20px -4px hsl(220 20% 15% / 0.08);
-    --shadow-card: 0 8px 40px -12px hsl(220 20% 15% / 0.1);
-    --shadow-elevated: 0 20px 60px -15px hsl(220 20% 15% / 0.15);
+    --shadow-soft: 0 4px 20px -4px hsl(240 10% 10% / 0.08);
+    --shadow-card: 0 8px 40px -12px hsl(240 10% 10% / 0.1);
+    --shadow-elevated: 0 20px 60px -15px hsl(240 10% 10% / 0.15);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -73,60 +76,96 @@
     --sidebar-accent: 240 4.8% 95.9%;
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 24 100% 50%;
+    --sidebar-ring: 245 82% 67%;
+
+    /* --- PRESERVED FROM OLD VERSION (Kept because they weren't in New) --- */
+    --orange: 24 100% 50%;
+    --orange-light: 24 100% 95%;
+    --orange-dark: 24 100% 40%;
+    
+    --peach: 25 80% 95%;
+    --peach-medium: 25 60% 90%;
+
+    --gradient-pastel: linear-gradient(135deg, 
+      hsl(350 60% 97%) 0%, 
+      hsl(30 50% 98%) 25%,
+      hsl(200 60% 97%) 50%,
+      hsl(30 60% 96%) 75%,
+      hsl(350 50% 97%) 100%
+    );
   }
 
   .dark {
-    --background: 220 20% 8%;
-    --foreground: 30 20% 95%;
+    /* --- NEW VERSION DARK MODE (Overwritten) --- */
+    --background: 240 10% 6%;
+    --foreground: 0 0% 95%;
 
-    --card: 220 20% 12%;
-    --card-foreground: 30 20% 95%;
+    --card: 240 10% 10%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 220 20% 12%;
-    --popover-foreground: 30 20% 95%;
+    --popover: 240 10% 10%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 24 100% 55%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 245 82% 70%;
+    --primary-foreground: 240 10% 6%;
 
-    --secondary: 220 15% 18%;
-    --secondary-foreground: 30 20% 95%;
+    --secondary: 240 10% 15%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 220 15% 18%;
-    --muted-foreground: 220 10% 60%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 5% 60%;
 
-    --accent: 24 100% 55%;
-    --accent-foreground: 220 20% 8%;
+    --accent: 263 70% 65%;
+    --accent-foreground: 240 10% 6%;
 
     --destructive: 0 62% 40%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 24 100% 55%;
+    --border: 240 10% 18%;
+    --input: 240 10% 18%;
+    --ring: 245 82% 70%;
 
-    --orange: 24 100% 55%;
-    --orange-light: 24 50% 20%;
-    --peach: 25 30% 15%;
-    --peach-medium: 25 20% 18%;
-    --gray-text: 220 10% 60%;
-    --gray-light: 220 15% 15%;
+    /* New Custom Colors Dark */
+    --indigo: 245 82% 70%;
+    --indigo-light: 245 50% 15%;
+    --violet: 263 70% 65%;
+    --violet-light: 263 50% 15%;
     
-    --gradient-pastel: linear-gradient(135deg, 
-      hsl(220 20% 10%) 0%, 
-      hsl(220 18% 12%) 50%,
-      hsl(220 20% 10%) 100%
+    --section-1: 240 10% 6%;
+    --section-2: 240 10% 8%;
+    --section-3: 245 15% 10%;
+    --section-4: 263 15% 10%;
+    --section-5: 200 15% 10%;
+    
+    --gray-text: 240 5% 60%;
+    --gray-light: 240 10% 15%;
+    
+    /* New Gradients Dark */
+    --gradient-primary: linear-gradient(135deg, 
+      hsl(245 82% 70%) 0%, 
+      hsl(263 70% 65%) 100%
     );
     
     --gradient-hero: linear-gradient(180deg,
-      hsl(220 20% 10%) 0%,
-      hsl(220 18% 11%) 50%,
-      hsl(220 20% 12%) 100%
+      hsl(240 10% 6%) 0%,
+      hsl(245 15% 8%) 100%
     );
 
     --shadow-soft: 0 4px 20px -4px hsl(0 0% 0% / 0.3);
     --shadow-card: 0 8px 40px -12px hsl(0 0% 0% / 0.4);
     --shadow-elevated: 0 20px 60px -15px hsl(0 0% 0% / 0.5);
+
+    /* --- PRESERVED DARK MODE (Kept from Old) --- */
+    --orange: 24 100% 55%;
+    --orange-light: 24 50% 20%;
+    --peach: 25 30% 15%;
+    --peach-medium: 25 20% 18%;
+
+    --gradient-pastel: linear-gradient(135deg, 
+      hsl(220 20% 10%) 0%, 
+      hsl(220 18% 12%) 50%,
+      hsl(220 20% 10%) 100%
+    );
   }
 }
 
@@ -151,8 +190,9 @@
 }
 
 @layer components {
-  .gradient-pastel {
-    background: var(--gradient-pastel);
+  /* New Classes */
+  .gradient-primary {
+    background: var(--gradient-primary);
   }
 
   .gradient-hero {
@@ -182,9 +222,32 @@
   .section-padding {
     @apply py-20 lg:py-28;
   }
+
+  /* Section backgrounds (New) */
+  .section-1 { background-color: hsl(var(--section-1)); }
+  .section-2 { background-color: hsl(var(--section-2)); }
+  .section-3 { background-color: hsl(var(--section-3)); }
+  .section-4 { background-color: hsl(var(--section-4)); }
+  .section-5 { background-color: hsl(var(--section-5)); }
+
+  /* --- PRESERVED CLASSES (From Old) --- */
+  .gradient-pastel {
+    background: var(--gradient-pastel);
+  }
 }
 
 @layer utilities {
+  .animate-fade-up {
+    animation: fadeUp 0.6s ease-out forwards;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out forwards;
+  }
 
   .hover-lift {
     @apply transition-all duration-300;
@@ -194,19 +257,11 @@
     transform: translateY(-4px);
     box-shadow: var(--shadow-elevated);
   }
-
-  .animate-fade-up {
-  animation: fadeUp 0.6s ease-out forwards;
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out forwards;
-}
-
-.animate-slide-up {
-  animation: slideUp 0.5s ease-out forwards;
-}
-
+  
+  /* Preserved Float utility if needed, though defined in keyframes below */
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
 }
 
 @keyframes fadeUp {
@@ -236,7 +291,6 @@
   }
 }
 
-
 @keyframes float {
   0%, 100% {
     transform: translateY(0) rotate(var(--rotation, 0deg));
@@ -244,9 +298,4 @@
   50% {
     transform: translateY(-10px) rotate(var(--rotation, 0deg));
   }
-}
-
-
-.animate-float {
-  animation: float 4s ease-in-out infinite;
 }

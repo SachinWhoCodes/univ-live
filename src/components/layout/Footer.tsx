@@ -1,35 +1,35 @@
+import { forwardRef } from "react";
 import { Link } from "react-router-dom";
-import { Instagram, Twitter, Linkedin, Facebook } from "lucide-react";
+import { Instagram, Linkedin, Facebook, Mail, Phone } from "lucide-react";
+import univLogo from "@/assets/univ-logo.png";
 
 const footerLinks = {
   product: [
     { name: "Home", path: "/" },
     { name: "Features", path: "/features" },
-    { name: "About Us", path: "/about" },
-    { name: "Pricing Plan", path: "/pricing" },
+    { name: "Pricing", path: "/pricing" },
   ],
   resources: [
     { name: "Contact Us", path: "/contact" },
-    { name: "Blog & Articles", path: "/blog" },
-    { name: "Terms of Use", path: "#" },
-    { name: "Privacy Policy", path: "#" },
+    { name: "About Us", path: "/about" },
+    { name: "Terms of Use", path: "/terms" },
+    { name: "Privacy Policy", path: "/privacy" },
   ],
 };
 
 const socialLinks = [
   { name: "Instagram", icon: Instagram, href: "#" },
-  { name: "X.com", icon: Twitter, href: "#" },
   { name: "LinkedIn", icon: Linkedin, href: "#" },
   { name: "Facebook", icon: Facebook, href: "#" },
 ];
 
-export function Footer() {
+export const Footer = forwardRef<HTMLElement>((_, ref) => {
   return (
-    <footer className="bg-foreground text-background relative overflow-hidden">
+    <footer ref={ref} className="bg-foreground text-background relative overflow-hidden">
       {/* Large watermark text */}
       <div className="absolute bottom-0 left-0 right-0 pointer-events-none select-none overflow-hidden">
         <div className="text-[15vw] font-bold text-background/5 whitespace-nowrap tracking-tight leading-none">
-          LEARNFLOW
+          UNIV
         </div>
       </div>
 
@@ -37,30 +37,30 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-8">
           {/* Brand */}
           <div className="lg:col-span-1">
-            <Link to="/" className="flex items-center gap-2 mb-5">
-              <div className="flex items-center justify-center w-9 h-9 bg-primary rounded-lg">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="w-5 h-5 text-primary-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-              </div>
-              <span className="font-bold text-xl">
-                Learn<span className="text-primary">Flow</span>
-              </span>
+            <Link to="/" className="flex items-center mb-5">
+              <img src={univLogo} alt="Univ.live" className="h-10 w-auto invert" />
             </Link>
-            <p className="text-background/70 text-sm leading-relaxed mb-6">
-              Transform your teaching with our AI-driven Learning Management System.
-              Effortlessly manage courses and engage learners.
+            <p className="text-background/90 text-lg font-medium mb-4">
+              Tayaari Exam Jaisi
             </p>
+            <p className="text-background/70 text-sm leading-relaxed mb-6">
+              Launch your own CUET test platform in minutes. Built specifically for coaching centers.
+            </p>
+            
+            {/* Contact info */}
+            <div className="space-y-2 mb-6">
+              <a href="tel:+919625394589" className="flex items-center gap-2 text-background/70 hover:text-primary transition-colors text-sm">
+                <Phone className="h-4 w-4" />
+                +91 96253 94589
+              </a>
+              <a href="mailto:info.univlive@gmail.com" className="flex items-center gap-2 text-background/70 hover:text-primary transition-colors text-sm">
+                <Mail className="h-4 w-4" />
+                info.univlive@gmail.com
+              </a>
+            </div>
+            
             <p className="text-background/50 text-xs">
-              © {new Date().getFullYear()} LearnFlow. All rights reserved.
+              © {new Date().getFullYear()} Univ.live. All rights reserved.
             </p>
           </div>
 
@@ -106,9 +106,13 @@ export function Footer() {
                 <li key={link.name}>
                   <a
                     href={link.href}
-                    className="flex items-center gap-3 text-background/70 hover:text-primary transition-colors text-sm"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 text-background/70 hover:text-primary transition-colors text-sm group"
                   >
-                    <link.icon className="h-4 w-4" />
+                    <span className="w-8 h-8 rounded-full bg-background/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                      <link.icon className="h-4 w-4" />
+                    </span>
                     {link.name}
                   </a>
                 </li>
@@ -119,7 +123,6 @@ export function Footer() {
       </div>
     </footer>
   );
-}
+});
 
-// ✅ add default export so `import Footer from ".../Footer"` works
-export default Footer;
+Footer.displayName = "Footer";

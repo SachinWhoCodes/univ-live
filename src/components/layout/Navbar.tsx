@@ -1,19 +1,18 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X } from "lucide-react";
-import { ButtonWithIcon } from "@/components/ui/button_ram";
+import { Menu, X, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import univLogo from "@/assets/univ-logo.png";
 
 const navLinks = [
   { name: "Home", path: "/" },
   { name: "Features", path: "/features" },
-  { name: "About", path: "/about" },
   { name: "Pricing", path: "/pricing" },
-  { name: "Blog", path: "/blog" },
+  { name: "Contact Us", path: "/contact" },
 ];
 
-// ✅ keep named export (for Layout.tsx and other existing imports)
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -34,49 +33,27 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        "fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-5xl transition-all duration-300",
-        isScrolled ? "top-2" : "top-4"
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+        isScrolled ? "bg-background/80 backdrop-blur-xl shadow-soft border-b border-border/50" : "bg-transparent"
       )}
     >
-      <nav
-        className={cn(
-          "flex items-center justify-between px-4 md:px-6 py-3 rounded-full border transition-all duration-300",
-          isScrolled
-            ? "bg-card/95 backdrop-blur-md shadow-card border-border"
-            : "bg-card/80 backdrop-blur-sm border-border/50"
-        )}
-      >
+      <nav className="container-main flex items-center justify-between py-4">
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-9 h-9 bg-primary rounded-lg">
-            <svg
-              viewBox="0 0 24 24"
-              className="w-5 h-5 text-primary-foreground"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-          </div>
-          <span className="font-bold text-xl text-foreground">
-            Learn<span className="text-primary">Flow</span>
-          </span>
+        <Link to="/" className="flex items-center">
+          <img src={univLogo} alt="Univ.live" className="h-10 w-auto" />
         </Link>
 
         {/* Desktop Nav Links */}
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1 bg-muted/50 backdrop-blur-sm rounded-full px-2 py-1.5">
           {navLinks.map((link) => (
             <Link
               key={link.path}
               to={link.path}
               className={cn(
-                "px-4 py-2 text-sm font-medium rounded-full transition-colors",
+                "px-4 py-2 text-sm font-medium rounded-full transition-all duration-200",
                 location.pathname === link.path
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-background text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/50"
               )}
             >
               {link.name}
@@ -84,25 +61,30 @@ export function Navbar() {
           ))}
         </div>
 
-        {/* Contact Button */}
-        <div className="hidden md:block">
-          <Link to="/contact">
-            <ButtonWithIcon variant="heroOutline" size="default">
-              Contact Us
-            </ButtonWithIcon>
+        {/* Auth Buttons */}
+        <div className="hidden md:flex items-center gap-3">
+          <Link to="/login">
+            <Button variant="ghost" size="sm" className="font-medium">
+              Login
+            </Button>
+          </Link>
+          <Link to="/signup">
+            <Button 
+              size="sm" 
+              className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground font-medium px-5 rounded-full shadow-soft group"
+            >
+              Get Started For Free
+              <ChevronRight className="ml-1 h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+            </Button>
           </Link>
         </div>
 
         {/* Mobile Menu Button */}
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-2 text-foreground"
+          className="md:hidden p-2 text-foreground rounded-lg hover:bg-muted transition-colors"
         >
-          {isMobileMenuOpen ? (
-            <X className="h-6 w-6" />
-          ) : (
-            <Menu className="h-6 w-6" />
-          )}
+          {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
       </nav>
 
@@ -110,12 +92,12 @@ export function Navbar() {
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="md:hidden mt-2 p-4 bg-card rounded-3xl border border-border shadow-card"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden bg-background/95 backdrop-blur-xl border-b border-border overflow-hidden"
           >
-            <div className="flex flex-col gap-2">
+            <div className="container-main py-4 flex flex-col gap-2">
               {navLinks.map((link) => (
                 <Link
                   key={link.path}
@@ -130,15 +112,19 @@ export function Navbar() {
                   {link.name}
                 </Link>
               ))}
-              <Link to="/contact" className="mt-2">
-                <ButtonWithIcon
-                  variant="heroOutline"
-                  size="default"
-                  className="w-full justify-center"
-                >
-                  Contact Us
-                </ButtonWithIcon>
-              </Link>
+              <div className="flex flex-col gap-2 mt-2 pt-4 border-t border-border">
+                <Link to="/login">
+                  <Button variant="outline" className="w-full justify-center rounded-xl">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button className="w-full justify-center bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-xl">
+                    Get Started For Free
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
             </div>
           </motion.div>
         )}
@@ -146,6 +132,3 @@ export function Navbar() {
     </header>
   );
 }
-
-// ✅ add default export so `import Navbar from ...` works too
-export default Navbar;

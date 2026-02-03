@@ -15,8 +15,8 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        // Custom variants for LearnFlow
-        hero: "bg-primary text-primary-foreground rounded-full shadow-soft hover:shadow-elevated hover:-translate-y-0.5",
+        // Custom variants for Univ
+        hero: "bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-full shadow-soft hover:shadow-elevated hover:-translate-y-0.5",
         heroOutline: "border-2 border-primary text-primary bg-transparent rounded-full hover:bg-primary/5",
         pill: "bg-primary text-primary-foreground rounded-full",
         pillOutline: "border-2 border-primary text-primary bg-transparent rounded-full hover:bg-primary/5",
@@ -52,15 +52,34 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-// Special button with orange circular icon (matching reference design)
+// Special button with icon (matching reference design)
 interface ButtonWithIconProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "hero" | "heroOutline";
+  variant?: "hero" | "heroOutline" | "ghost";
   size?: "default" | "lg" | "xl";
 }
 
 const ButtonWithIcon = React.forwardRef<HTMLButtonElement, ButtonWithIconProps>(
   ({ className, variant = "hero", size = "lg", children, ...props }, ref) => {
     const isOutline = variant === "heroOutline";
+    const isGhost = variant === "ghost";
+
+    if (isGhost) {
+      return (
+        <button
+          className={cn(
+            "inline-flex items-center gap-2 font-semibold transition-all duration-300 rounded-full text-muted-foreground hover:text-foreground",
+            size === "xl" && "px-6 py-4 text-lg",
+            size === "lg" && "px-4 py-2.5",
+            size === "default" && "px-4 py-2 text-sm",
+            className
+          )}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+    }
 
     return (
       <button
@@ -68,7 +87,7 @@ const ButtonWithIcon = React.forwardRef<HTMLButtonElement, ButtonWithIconProps>(
           "inline-flex items-center gap-3 font-semibold transition-all duration-300 rounded-full",
           isOutline
             ? "border-2 border-primary text-primary bg-transparent hover:bg-primary/5 px-5 py-3"
-            : "bg-primary text-primary-foreground px-5 py-3 shadow-soft hover:shadow-elevated hover:-translate-y-0.5",
+            : "bg-gradient-to-r from-primary to-accent text-primary-foreground px-5 py-3 shadow-soft hover:shadow-elevated hover:-translate-y-0.5",
           size === "xl" && "px-6 py-4 text-lg",
           size === "default" && "px-4 py-2.5 text-sm",
           className

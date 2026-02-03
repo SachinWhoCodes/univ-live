@@ -1,300 +1,208 @@
-import { motion } from "framer-motion";
 import { useState } from "react";
-import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
-import { Check, Sparkles, ArrowRight, HelpCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Layout } from "@/components/layout/Layout";
+import { motion } from "framer-motion";
+import { Check, X } from "lucide-react";
+import { ButtonWithIcon } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 
 const plans = [
   {
-    name: "Starter",
-    description: "Perfect for small coaching centers just getting started",
-    monthlyPrice: 2999,
-    yearlyPrice: 29990,
+    name: "Essential Plan",
+    price: 169,
+    description: "Best for small coaching centers starting with CBT",
     features: [
-      "Branded subdomain (yourname.univ.live)",
-      "Up to 100 active students",
-      "10 test imports per month",
-      "Basic analytics dashboard",
+      "5-day free trial",
+      "No restriction on subject selection",
+      "10 full-length CBT tests per subject",
+      "AI-powered advanced analytics",
+      "Upload your own content (test series, questions & question banks)",
+      "AI-powered solutions",
+      "Complete student performance analytics",
       "Email support",
-      "Student portal access",
-      "Mobile responsive website",
     ],
-    notIncluded: [
-      "Custom domain",
-      "AI-powered analytics",
-      "White-label solution",
-      "API access",
-    ],
-    highlighted: false,
-    cta: "Start Free Trial",
+    cta: "Get Started",
+    popular: false,
   },
   {
-    name: "Growth",
-    description: "Best for growing institutes looking to scale",
-    monthlyPrice: 7999,
-    yearlyPrice: 79990,
+    name: "Growth Plan",
+    price: 199,
+    description: "Best for growing coaching centers",
     features: [
-      "Everything in Starter",
-      "Up to 500 active students",
-      "Unlimited test imports",
-      "AI-powered analytics & insights",
-      "Custom domain support",
-      "Priority email & chat support",
-      "Student mobile app access",
-      "Advanced reporting",
-      "Batch management",
+      "Everything in Essential, plus:",
+      "5-day free trial",
+      "Priority call & chat support",
+      "Personalized preference sheet",
+      "1-on-1 mentorship with top university & college students",
+      "Exclusive WhatsApp teacher community (fast CUET updates & discussions)",
+      "Complete post-CUET student support (results, counselling & admissions guidance)",
     ],
-    notIncluded: [
-      "White-label solution",
-      "API access",
-    ],
-    highlighted: true,
-    cta: "Start Free Trial",
-  },
-  {
-    name: "Enterprise",
-    description: "For large institutions with custom requirements",
-    monthlyPrice: null,
-    yearlyPrice: null,
-    features: [
-      "Everything in Growth",
-      "Unlimited students",
-      "White-label solution",
-      "Full API access",
-      "Dedicated account manager",
-      "Custom integrations",
-      "SLA guarantee (99.9% uptime)",
-      "On-premise deployment option",
-      "Custom training sessions",
-    ],
-    notIncluded: [],
-    highlighted: false,
-    cta: "Contact Sales",
+    cta: "Get Started",
+    popular: true,
   },
 ];
 
-const faqs = [
-  {
-    question: "What's included in the free trial?",
-    answer: "The 14-day free trial includes full access to all features of the Growth plan. No credit card required to start.",
-  },
-  {
-    question: "Can I switch plans later?",
-    answer: "Yes, you can upgrade or downgrade your plan at any time. Changes take effect at the start of your next billing cycle.",
-  },
-  {
-    question: "Is there a student limit on each plan?",
-    answer: "Yes, Starter supports up to 100 students, Growth supports up to 500 students. Enterprise has no limit.",
-  },
-  {
-    question: "Do you offer discounts for annual billing?",
-    answer: "Yes! Annual billing gives you 2 months free (approximately 17% savings).",
-  },
-  {
-    question: "What payment methods do you accept?",
-    answer: "We accept all major credit/debit cards, UPI, net banking, and PayTM. Enterprise customers can pay via invoice.",
-  },
-  {
-    question: "Can I cancel anytime?",
-    answer: "Yes, you can cancel your subscription at any time. Your access will continue until the end of your billing period.",
-  },
+const comparisonData = [
+  { feature: "Cost per test paper", omr: "₹5 (printing + OMR)", univ: "₹0", omrBad: true },
+  { feature: "No. of papers (5 subjects × 10 tests)", omr: "50 papers", univ: "More Than 50 Tests", omrBad: true },
+  { feature: "Total cost", omr: "₹250 per student", univ: "₹169-₹199", omrBad: true },
+  { feature: "Manual checking", omr: "Required", univ: "Automated", omrBad: true },
+  { feature: "Instant results", omr: "No", univ: "Yes", omrBad: true },
+  { feature: "Real computer based experience", omr: "No", univ: "Yes", omrBad: true },
+  { feature: "Performance analytics", omr: "Not available", univ: "AI-powered Advance", omrBad: true },
+  { feature: "Time & accuracy insights", omr: "No", univ: "Yes", omrBad: true },
 ];
 
-export default function Pricing() {
-  const [isYearly, setIsYearly] = useState(false);
-
+const Pricing = () => {
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      
-      <main className="pt-24 pb-20">
-        {/* Hero */}
-        <section className="container mx-auto px-4 lg:px-8 py-16 text-center">
+    <Layout>
+      {/* Pricing Header */}
+      <section className="section-padding section-1">
+        <div className="container-main">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            className="text-center max-w-3xl mx-auto mb-16"
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.5 }}
           >
-            <span className="inline-block px-4 py-1.5 rounded-full bg-brand-start/10 text-sm font-medium text-brand-blue mb-4">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4">
               Pricing
-            </span>
-            <h1 className="text-4xl sm:text-5xl font-display font-bold mb-6">
-              Simple, <span className="gradient-text">Transparent</span> Pricing
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-              Choose the perfect plan for your coaching institute. All plans include a 14-day free trial.
+            <p className="text-lg text-muted-foreground">
+              No setup fee. No fixed cost. Pay only for enrolled students.
             </p>
-
-            {/* Billing Toggle */}
-            <div className="inline-flex items-center gap-4 bg-secondary/50 rounded-full p-1.5">
-              <button
-                onClick={() => setIsYearly(false)}
-                className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-                  !isYearly ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setIsYearly(true)}
-                className={`px-6 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${
-                  isYearly ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Yearly
-                <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-600 text-xs font-semibold">
-                  Save 17%
-                </span>
-              </button>
-            </div>
           </motion.div>
-        </section>
 
-        {/* Pricing Cards */}
-        <section className="container mx-auto px-4 lg:px-8 py-8">
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          {/* Pricing Cards */}
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-20">
             {plans.map((plan, index) => (
               <motion.div
                 key={plan.name}
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                className={`relative rounded-2xl p-8 ${
-                  plan.highlighted
-                    ? "bg-gradient-to-br from-brand-start/5 to-brand-end/5 border-2 border-brand-start/30 shadow-glow"
-                    : "bg-card border border-border/50"
+                className={`bg-card rounded-3xl p-8 border shadow-soft relative ${
+                  plan.popular
+                    ? "border-primary ring-2 ring-primary/20"
+                    : "border-border"
                 }`}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: index * 0.1 }}
               >
-                {/* Popular Badge */}
-                {plan.highlighted && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full gradient-bg">
-                    <div className="flex items-center gap-1">
-                      <Sparkles className="w-4 h-4 text-white" />
-                      <span className="text-sm font-semibold text-white">Most Popular</span>
-                    </div>
+                {plan.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-primary to-accent text-primary-foreground text-xs font-semibold px-4 py-1 rounded-full">
+                    Most Popular
                   </div>
                 )}
 
-                {/* Plan Info */}
                 <div className="mb-6">
-                  <h3 className="text-2xl font-display font-bold mb-2">{plan.name}</h3>
-                  <p className="text-sm text-muted-foreground">{plan.description}</p>
+                  <h3 className="text-xl font-semibold mb-2">{plan.name}</h3>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl lg:text-5xl font-bold">₹{plan.price}</span>
+                    <span className="text-muted-foreground">/ Student</span>
+                  </div>
+                  <p className="text-muted-foreground mt-3">{plan.description}</p>
                 </div>
 
-                {/* Price */}
-                <div className="mb-8">
-                  {plan.monthlyPrice ? (
-                    <>
-                      <span className="text-5xl font-display font-bold">
-                        ₹{isYearly ? Math.round(plan.yearlyPrice! / 12) : plan.monthlyPrice}
-                      </span>
-                      <span className="text-muted-foreground">/month</span>
-                      {isYearly && (
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Billed ₹{plan.yearlyPrice?.toLocaleString()} yearly
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-4xl font-display font-bold">Custom</span>
-                  )}
-                </div>
+                <Link to="/signup">
+                  <ButtonWithIcon
+                    variant={plan.popular ? "hero" : "heroOutline"}
+                    size="lg"
+                    className="w-full justify-center mb-8"
+                  >
+                    {plan.cta}
+                  </ButtonWithIcon>
+                </Link>
 
-                {/* Features */}
-                <ul className="space-y-3 mb-8">
+                <ul className="space-y-3">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-3">
-                      <Check className="w-5 h-5 text-brand-blue shrink-0 mt-0.5" />
-                      <span className="text-sm text-foreground">{feature}</span>
+                      <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                      <span className="text-muted-foreground text-sm">{feature}</span>
                     </li>
                   ))}
                 </ul>
-
-                {/* CTA */}
-                <Button
-                  variant={plan.highlighted ? "gradient" : "outline"}
-                  className="w-full"
-                  size="lg"
-                  asChild
-                >
-                  <Link to={plan.cta === "Contact Sales" ? "/contact" : "/signup"}>
-                    {plan.cta}
-                  </Link>
-                </Button>
               </motion.div>
             ))}
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* FAQ */}
-        <section className="container mx-auto px-4 lg:px-8 py-20">
+      {/* Comparison Section */}
+      <section className="section-padding section-2">
+        <div className="container-main">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            className="text-center max-w-3xl mx-auto mb-12"
+            initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="max-w-3xl mx-auto"
+            transition={{ duration: 0.5 }}
           >
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-display font-bold mb-4">
-                Frequently Asked Questions
-              </h2>
-              <p className="text-muted-foreground">
-                Everything you need to know about our pricing
-              </p>
-            </div>
-
-            <Accordion type="single" collapsible className="space-y-4">
-              {faqs.map((faq, index) => (
-                <AccordionItem
-                  key={index}
-                  value={`item-${index}`}
-                  className="bg-card rounded-xl border border-border/50 px-6"
-                >
-                  <AccordionTrigger className="text-left font-medium hover:no-underline py-4">
-                    {faq.question}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground pb-4">
-                    {faq.answer}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </motion.div>
-        </section>
-
-        {/* CTA */}
-        <section className="container mx-auto px-4 lg:px-8 py-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center bg-card rounded-3xl p-12 border border-border/50"
-          >
-            <h2 className="text-3xl font-display font-bold mb-4">
-              Still have questions?
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
+              OMR vs Univ.live CBT — Per Student Comparison
             </h2>
-            <p className="text-lg text-muted-foreground mb-8">
-              Our team is here to help you find the perfect plan
-            </p>
-            <Button variant="gradient" size="xl" asChild className="group">
-              <Link to="/contact">
-                Contact Sales
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </Link>
-            </Button>
           </motion.div>
-        </section>
-      </main>
 
-      <Footer />
-    </div>
+          <motion.div
+            className="bg-card rounded-3xl border border-border shadow-card overflow-hidden max-w-4xl mx-auto mb-12"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left p-4 font-semibold">Feature / Cost Factor</th>
+                    <th className="text-center p-4 font-semibold bg-red-50">Traditional OMR Tests</th>
+                    <th className="text-center p-4 font-semibold bg-green-50">Univ.live CBT Platform</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparisonData.map((row, index) => (
+                    <tr key={row.feature} className={index % 2 === 0 ? "bg-muted/30" : ""}>
+                      <td className="p-4 font-medium">{row.feature}</td>
+                      <td className="text-center p-4 bg-red-50/50">
+                        <span className="inline-flex items-center gap-2 text-red-600">
+                          <X className="h-4 w-4" />
+                          {row.omr}
+                        </span>
+                      </td>
+                      <td className="text-center p-4 bg-green-50/50">
+                        <span className="inline-flex items-center gap-2 text-green-600">
+                          <Check className="h-4 w-4" />
+                          {row.univ}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+
+          {/* CTA Buttons */}
+          <motion.div
+            className="flex flex-wrap justify-center gap-4"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <Link to="/signup">
+              <ButtonWithIcon variant="hero" size="lg">
+                Get Started For Free
+              </ButtonWithIcon>
+            </Link>
+            <Link to="/contact">
+              <ButtonWithIcon variant="heroOutline" size="lg">
+                Book a Demo
+              </ButtonWithIcon>
+            </Link>
+          </motion.div>
+        </div>
+      </section>
+    </Layout>
   );
-}
+};
+
+export default Pricing;
