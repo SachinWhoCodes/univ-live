@@ -158,6 +158,9 @@ export default {
         "card-hover": "0 16px 40px -8px hsl(220 47% 11% / 0.1)",
         "soft": "0 2px 12px -2px hsl(220 47% 11% / 0.04)",
       },
+      backgroundImage: {
+        "gradient-bg": "linear-gradient(135deg, hsl(245 82% 67%) 0%, hsl(263 70% 58%) 100%)",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],
