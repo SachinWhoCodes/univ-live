@@ -3,6 +3,7 @@ import type { User } from "firebase/auth";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { saveAuthTokenToCookie, clearAuthToken, setupAuthSyncListener } from "@/lib/authPersistence";
 
 export type UserRole = "ADMIN" | "EDUCATOR" | "STUDENT";
 
@@ -66,6 +67,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setFirebaseUser(u);
+      
+      // ✅ Save token to domain-level cookie for cross-subdomain persistence
+      if (u) {
+        await saveAuthTokenToCookie();
+      } else {
+        clearAuthToken();
+      }
+      
       if (!u) {
         setProfile(null);
         setLoading(false);
@@ -79,7 +88,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
-    return () => unsub();
+    
+    // Setup cross-tab auth sync
+    const unsyncListener = setupAuthSyncListener();
+    
+    return () => {
+      unsub();
+      unsyncListener?.();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(() => {

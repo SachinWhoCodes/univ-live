@@ -1,6 +1,6 @@
 // src/lib/firebase.ts
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth, setPersistence, indexedDBLocalPersistence } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -24,9 +24,9 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Configure persistence to use indexedDB for cross-subdomain support
-// This allows auth state to be shared across univ.live and *.univ.live subdomains
-setPersistence(auth, indexedDBLocalPersistence).catch((err) => {
+// Configure persistence to use browserLocalPersistence
+// We supplement this with domain-level cookies in authPersistence.ts
+setPersistence(auth, browserLocalPersistence).catch((err) => {
   console.warn("Failed to set Firebase persistence:", err);
 });
 
