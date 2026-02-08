@@ -13,7 +13,9 @@ import {
   Layout,
   BarChart,
   ImageIcon,
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  X
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthProvider"; 
 import { db } from "@/lib/firebase";
 import {
@@ -55,6 +74,19 @@ export default function WebsiteSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // --- AI Generation State ---
+  const [showAIDialog, setShowAIDialog] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [generatedContent, setGeneratedContent] = useState<any>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  
+  // AI Input Form
+  const [aiEducatorName, setAiEducatorName] = useState("");
+  const [aiSubjects, setAiSubjects] = useState("");
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiYearEstablished, setAiYearEstablished] = useState<number | "">("");
+  const [aiStudentCount, setAiStudentCount] = useState<number | "">("");
+
   // --- Existing Website Content State ---
   const [coachingName, setCoachingName] = useState("");
   const [tagline, setTagline] = useState("");
@@ -70,6 +102,66 @@ export default function WebsiteSettings() {
   const [featuredTestIds, setFeaturedTestIds] = useState<string[]>([]); 
 
   const {tenant} = useTenant();
+
+  // --- AI Generation Function ---
+  const handleGenerateWithAI = async () => {
+    if (!aiEducatorName || !aiSubjects || !aiDescription) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    setAiGenerating(true);
+    try {
+      const subjectsArray = aiSubjects.split(",").map(s => s.trim()).filter(Boolean);
+      if (subjectsArray.length === 0) {
+        toast.error("Please enter at least one subject");
+        setAiGenerating(false);
+        return;
+      }
+
+      const response = await fetch("/api/ai/generate-website-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          coachingName: coachingName || tenant?.coachingName || "Coaching Center",
+          educatorName: aiEducatorName,
+          subjects: subjectsArray,
+          description: aiDescription,
+          yearEstablished: aiYearEstablished ? Number(aiYearEstablished) : undefined,
+          studentCount: aiStudentCount ? Number(aiStudentCount) : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate content");
+      }
+
+      const content = await response.json();
+      setGeneratedContent(content);
+      setShowAIDialog(false);
+      setShowConfirmModal(true);
+    } catch (err) {
+      console.error("Error generating content:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to generate content with AI");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  // --- Apply Generated Content ---
+  const handleApplyGeneratedContent = () => {
+    if (!generatedContent) return;
+
+    setStats(generatedContent.stats || []);
+    setAchievements(generatedContent.achievements || []);
+    setTestimonials(generatedContent.testimonials || []);
+    setFaculty(generatedContent.faculty || []);
+
+    setShowConfirmModal(false);
+    setGeneratedContent(null);
+    toast.success("AI-generated content applied! Review and publish when ready.");
+  };
 
   // --- 1. Fetch All Data ---
   useEffect(() => {
@@ -223,10 +315,104 @@ export default function WebsiteSettings() {
           <h1 className="text-2xl font-bold">Website Builder</h1>
           <p className="text-muted-foreground">Manage the content visible on your public website.</p>
         </div>
-        <Button onClick={handleSave} disabled={saving} className="gradient-bg text-white shadow-md">
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Publish Changes
-        </Button>
+        <div className="flex gap-2">
+          <Dialog open={showAIDialog} onOpenChange={setShowAIDialog}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="border-primary/30 hover:bg-primary/5">
+                <Sparkles className="mr-2 h-4 w-4" />
+                AI Generate Content
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Generate Website Content with AI</DialogTitle>
+                <DialogDescription>
+                  Tell us about your coaching center, and our AI will generate professional website content.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="educator-name">Educator Name *</Label>
+                  <Input
+                    id="educator-name"
+                    placeholder="e.g., Dr. Rajesh Kumar"
+                    value={aiEducatorName}
+                    onChange={(e) => setAiEducatorName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subjects">Subjects (comma-separated) *</Label>
+                  <Input
+                    id="subjects"
+                    placeholder="e.g., Physics, Chemistry, Mathematics"
+                    value={aiSubjects}
+                    onChange={(e) => setAiSubjects(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">About Your Coaching *</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Tell us about your coaching center, specializations, teaching methodology, etc."
+                    value={aiDescription}
+                    onChange={(e) => setAiDescription(e.target.value)}
+                    className="resize-none"
+                    rows={4}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="year-established">Year Established (Optional)</Label>
+                    <Input
+                      id="year-established"
+                      type="number"
+                      placeholder="e.g., 2015"
+                      value={aiYearEstablished}
+                      onChange={(e) => setAiYearEstablished(e.target.value ? Number(e.target.value) : "")}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="student-count">Approx. Students (Optional)</Label>
+                    <Input
+                      id="student-count"
+                      type="number"
+                      placeholder="e.g., 500"
+                      value={aiStudentCount}
+                      onChange={(e) => setAiStudentCount(e.target.value ? Number(e.target.value) : "")}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setShowAIDialog(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleGenerateWithAI} 
+                  disabled={aiGenerating}
+                  className="gradient-bg text-white"
+                >
+                  {aiGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate
+                    </>
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Button onClick={handleSave} disabled={saving} className="gradient-bg text-white shadow-md">
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Publish Changes
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
@@ -543,6 +729,95 @@ export default function WebsiteSettings() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* --- AI Content Confirmation Modal --- */}
+      <AlertDialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <AlertDialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Review AI-Generated Content
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Here's the professional content our AI generated for your website. Review and make adjustments as needed before applying.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {generatedContent && (
+            <div className="space-y-6 py-4">
+              {/* Stats Preview */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">📊 Key Statistics</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {generatedContent.stats?.map((stat: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-muted rounded-lg text-center text-sm">
+                      <div className="text-xs text-muted-foreground">{stat.label}</div>
+                      <div className="font-bold text-lg mt-1">{stat.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Achievements Preview */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">🏆 Awards & Achievements</h3>
+                <div className="space-y-2">
+                  {generatedContent.achievements?.map((achievement: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-muted rounded-lg text-sm">
+                      <div className="font-semibold">{achievement.title}</div>
+                      <div className="text-xs text-muted-foreground mt-1">{achievement.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Faculty Preview */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">👥 Faculty</h3>
+                <div className="space-y-2">
+                  {generatedContent.faculty?.map((member: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-muted rounded-lg text-sm">
+                      <div className="font-semibold">{member.name}</div>
+                      <div className="text-xs text-muted-foreground">{member.subject} • {member.designation}</div>
+                      <div className="text-xs mt-2">{member.bio}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Testimonials Preview */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">⭐ Student Reviews</h3>
+                <div className="space-y-2">
+                  {generatedContent.testimonials?.map((testimonial: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-muted rounded-lg text-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-semibold">{testimonial.name}</div>
+                          <div className="text-xs text-muted-foreground">{testimonial.course}</div>
+                        </div>
+                        <div className="text-xs">⭐ {testimonial.rating}/5</div>
+                      </div>
+                      <div className="text-xs mt-2 italic">"{testimonial.text}"</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end">
+            <AlertDialogCancel>Discard & Edit Manually</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleApplyGeneratedContent}
+              className="gradient-bg text-white"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Apply Generated Content
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
