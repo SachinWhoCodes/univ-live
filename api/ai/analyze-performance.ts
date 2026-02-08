@@ -101,7 +101,7 @@ export default async function handler(
         Authorization: `Bearer ${groqApiKey}`,
       },
       body: JSON.stringify({
-        model: "mixtral-8x7b-32768", // Fast, capable model
+        model: "llama-3.1-70b-versatile", // Modern capable model (mixtral-8x7b-32768 decommissioned)
         messages: [
           {
             role: "system",
