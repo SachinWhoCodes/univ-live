@@ -117,7 +117,8 @@ export default function Login() {
       } else {
         // For production: redirect to subdomain
         const protocol = window.location.protocol; // https:
-        const educatorUrl = `${protocol}//${tenantSlugDb}.univ.live/educator`;
+        const appDomain = import.meta.env.VITE_APP_DOMAIN || "univ.live";
+        const educatorUrl = `${protocol}//${tenantSlugDb}.${appDomain}/educator`;
         window.location.href = educatorUrl;
       }
     } catch (error: any) {
