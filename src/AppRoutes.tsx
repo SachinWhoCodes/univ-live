@@ -17,6 +17,8 @@ import NotFound from "@/pages/NotFound";
 import Index from "@/pages/Index";
 import HowItWorks from "@/pages/HowItWorks";
 import Pricing from "@/pages/Pricing";
+import Contact from "@/pages/Contact";
+import Features from "@/pages/Features";
 
 import AdminTestManager from "./pages/AdminTestManager";
 
@@ -122,6 +124,8 @@ export default function AppRoutes() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/features" element={<Features />} />
 
 
           {/* ✅ Admin Panel */}

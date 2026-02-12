@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import { Link } from "react-router-dom";
 import { Instagram, Linkedin, Facebook, Mail, Phone } from "lucide-react";
-import univLogo from "@/assets/univ-logo.png";
+import univLogo from "@/assets/univ-logo-2.png";
 
 const footerLinks = {
   product: [

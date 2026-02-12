@@ -4,7 +4,7 @@ import { Menu, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import univLogo from "@/assets/univ-logo.png";
+import univLogo from "@/assets/univ-logo-1.png";
 import { SHOW_ANNOUNCEMENT } from "./AnnouncementBar";
 
 const navLinks = [
