@@ -101,11 +101,11 @@ export function BenefitsSection() {
               <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </ButtonWithIcon>
           </Link>
-          <Link to="/contact">
+          <a href="https://calendly.com/info-univlive" target="_blank" rel="noopener noreferrer">
             <ButtonWithIcon variant="heroOutline" size="lg">
               Book a Demo
             </ButtonWithIcon>
-          </Link>
+          </a>
         </motion.div>
       </div>
     </section>

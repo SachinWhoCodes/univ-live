@@ -75,7 +75,7 @@ export const CTASection = forwardRef<HTMLElement>((_, ref) => {
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                 </ButtonWithIcon>
               </Link>
-              <Link to="/contact">
+              <a href="https://calendly.com/info-univlive" target="_blank" rel="noopener noreferrer">
                 <ButtonWithIcon
                   variant="heroOutline"
                   size="xl"
@@ -83,7 +83,7 @@ export const CTASection = forwardRef<HTMLElement>((_, ref) => {
                 >
                   Book a Demo
                 </ButtonWithIcon>
-              </Link>
+              </a>
             </div>
           </div>
         </motion.div>

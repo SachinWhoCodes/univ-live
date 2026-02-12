@@ -102,9 +102,11 @@ const Contact = () => {
                 <p className="text-muted-foreground text-sm mb-4">
                   See how Univ.live can transform your coaching center's CUET preparation.
                 </p>
-                <ButtonWithIcon variant="hero" size="default">
-                  Schedule Demo
-                </ButtonWithIcon>
+                <a href="https://calendly.com/info-univlive" target="_blank" rel="noopener noreferrer">
+                  <ButtonWithIcon variant="hero" size="default">
+                    Schedule Demo
+                  </ButtonWithIcon>
+                </a>
               </motion.div>
             </motion.div>
 

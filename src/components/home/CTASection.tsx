@@ -84,14 +84,16 @@ export default function CTASection() {
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </Button>
+              <a href="https://calendly.com/info-univlive" target="_blank" rel="noopener noreferrer">
               <Button
                 size="xl"
                 variant="ghost"
                 className="text-white hover:bg-white/10 rounded-full"
                 asChild
               >
-                <Link to="/contact">Book a Demo</Link>
+                Book a Demo
               </Button>
+              </a>
             </motion.div>
 
             {/* Trust Badges */}
