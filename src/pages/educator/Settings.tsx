@@ -12,6 +12,8 @@ import {
   EyeOff,
   Upload,
   Loader2,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,10 +24,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 
-import { onAuthStateChanged, signOut, updateProfile, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signOut,
+  updateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+} from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage } from "@/lib/firebase";
+import { useAuth } from "@/contexts/AuthProvider";
 
 type EducatorPrefs = {
   notifications?: {
@@ -41,10 +51,12 @@ type EducatorProfileDoc = {
   phone?: string;
   photoURL?: string;
   prefs?: EducatorPrefs;
+  tenantSlug?: string;
 };
 
 export default function Settings() {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const { refreshProfile } = useAuth();
 
   const [uid, setUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +70,23 @@ export default function Settings() {
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Subdomain / slug
+  const [tenantSlug, setTenantSlug] = useState("");
+  const [newTenantSlug, setNewTenantSlug] = useState("");
+  const [changingSlug, setChangingSlug] = useState(false);
+
+  const appDomain =
+    (import.meta.env.VITE_APP_DOMAIN as string | undefined) ||
+    (import.meta.env.VITE_APP_BASE_DOMAIN as string | undefined) ||
+    "univ.live";
+
+  const previewSlug = String(newTenantSlug || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/(^-|-$)/g, "");
 
   // Password fields
   const [showPassword, setShowPassword] = useState(false);
@@ -95,6 +124,7 @@ export default function Settings() {
         setDisplayName(data.displayName || u.displayName || "");
         setPhone(data.phone || "");
         setPhotoURL(data.photoURL || u.photoURL || "");
+        setTenantSlug(data.tenantSlug || "");
 
         const n = data.prefs?.notifications;
         setNotifications({
@@ -216,6 +246,58 @@ export default function Settings() {
       });
     } finally {
       setSavingProfile(false);
+    }
+  }
+
+  async function updateSubdomainSlug() {
+    if (!auth.currentUser || !uid) return;
+
+    const slug = previewSlug;
+
+    if (!slug || slug.length < 3) {
+      toast({
+        title: "Invalid slug",
+        description: "Slug must be at least 3 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setChangingSlug(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const resp = await fetch("/api/tenant/change-slug", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ newSlug: slug }),
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data?.error || "Failed to update subdomain.");
+      }
+
+      setTenantSlug(slug);
+      setNewTenantSlug("");
+
+      toast({
+        title: "Subdomain updated",
+        description: `Your new coaching URL is https://${slug}.${appDomain}`,
+      });
+
+      // keep AuthProvider profile in sync
+      await refreshProfile().catch(() => {});
+    } catch (e: any) {
+      toast({
+        title: "Update failed",
+        description: e?.message || "Could not update subdomain.",
+        variant: "destructive",
+      });
+    } finally {
+      setChangingSlug(false);
     }
   }
 
@@ -358,9 +440,7 @@ export default function Settings() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-display font-bold">Settings</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage your account preferences
-        </p>
+        <p className="text-muted-foreground text-sm">Manage your account preferences</p>
       </div>
 
       {/* Profile Section */}
@@ -375,17 +455,14 @@ export default function Settings() {
           <CardContent className="space-y-6">
             <div className="flex items-center gap-4">
               <Avatar className="h-20 w-20">
-                <AvatarImage src={photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=educator"} />
+                <AvatarImage
+                  src={photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=educator"}
+                />
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
 
               <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePickPhoto}
-                  disabled={uploadingPhoto}
-                >
+                <Button variant="outline" size="sm" onClick={handlePickPhoto} disabled={uploadingPhoto}>
                   {uploadingPhoto ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -398,9 +475,7 @@ export default function Settings() {
                     </>
                   )}
                 </Button>
-                <p className="text-xs text-muted-foreground mt-2">
-                  JPG, PNG or GIF. Max 2MB.
-                </p>
+                <p className="text-xs text-muted-foreground mt-2">JPG, PNG or GIF. Max 2MB.</p>
 
                 <input
                   ref={fileRef}
@@ -448,11 +523,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              onClick={saveProfile}
-              disabled={savingProfile}
-            >
+            <Button variant="outline" onClick={saveProfile} disabled={savingProfile}>
               {savingProfile ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -462,6 +533,99 @@ export default function Settings() {
                 "Save Changes"
               )}
             </Button>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Subdomain Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Subdomain (Your Coaching URL)
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              Current URL:{" "}
+              <span className="text-foreground font-medium">
+                {tenantSlug ? `https://${tenantSlug}.${appDomain}` : "Not set"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div className="space-y-2">
+                <Label>New subdomain slug</Label>
+                <Input
+                  value={newTenantSlug}
+                  onChange={(e) => setNewTenantSlug(e.target.value)}
+                  placeholder="e.g. rishi-academy"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Allowed: lowercase letters, numbers, hyphen. Length 3–40.
+                </p>
+
+                {previewSlug && previewSlug !== tenantSlug && (
+                  <p className="text-xs text-muted-foreground">
+                    Preview:{" "}
+                    <span className="text-foreground font-medium">
+                      {`https://${previewSlug}.${appDomain}`}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={changingSlug || !tenantSlug}
+                  onClick={() => setNewTenantSlug(tenantSlug)}
+                >
+                  Reset
+                </Button>
+
+                <Button
+                  type="button"
+                  disabled={changingSlug || !previewSlug || previewSlug === tenantSlug}
+                  onClick={updateSubdomainSlug}
+                >
+                  {changingSlug ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Updating...
+                    </>
+                  ) : (
+                    "Update Subdomain"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {tenantSlug && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="justify-start px-0"
+                onClick={() => window.open(`https://${tenantSlug}.${appDomain}`, "_blank")}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open coaching website
+              </Button>
+            )}
+
+            <Separator />
+
+            <p className="text-xs text-muted-foreground">
+              Note: Your old slug remains reserved to prevent anyone else from taking it, and existing student
+              links keep working.
+            </p>
           </CardContent>
         </Card>
       </motion.div>
@@ -522,11 +686,7 @@ export default function Settings() {
               />
             </div>
 
-            <Button
-              variant="outline"
-              onClick={handleUpdatePassword}
-              disabled={updatingPassword}
-            >
+            <Button variant="outline" onClick={handleUpdatePassword} disabled={updatingPassword}>
               {updatingPassword ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -559,9 +719,7 @@ export default function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Email Notifications</p>
-                    <p className="text-xs text-muted-foreground">
-                      Receive updates via email
-                    </p>
+                    <p className="text-xs text-muted-foreground">Receive updates via email</p>
                   </div>
                   <Switch
                     checked={notifications.email}
@@ -574,9 +732,7 @@ export default function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">SMS Notifications</p>
-                    <p className="text-xs text-muted-foreground">
-                      Receive alerts via SMS
-                    </p>
+                    <p className="text-xs text-muted-foreground">Receive alerts via SMS</p>
                   </div>
                   <Switch
                     checked={notifications.sms}
@@ -589,9 +745,7 @@ export default function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Push Notifications</p>
-                    <p className="text-xs text-muted-foreground">
-                      Get push notifications in-app
-                    </p>
+                    <p className="text-xs text-muted-foreground">Get push notifications in-app</p>
                   </div>
                   <Switch
                     checked={notifications.push}
@@ -602,11 +756,7 @@ export default function Settings() {
                 </div>
               </div>
 
-              <Button
-                variant="outline"
-                onClick={saveNotificationPrefs}
-                disabled={savingPrefs}
-              >
+              <Button variant="outline" onClick={saveNotificationPrefs} disabled={savingPrefs}>
                 {savingPrefs ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -659,9 +809,7 @@ export default function Settings() {
             <div className="flex items-center justify-between p-4 rounded-lg border border-border">
               <div>
                 <p className="text-sm font-medium">Active Sessions</p>
-                <p className="text-xs text-muted-foreground">
-                  Manage your active login sessions
-                </p>
+                <p className="text-xs text-muted-foreground">Manage your active login sessions</p>
               </div>
               <Button
                 variant="outline"
@@ -697,9 +845,7 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Log out from all devices</p>
-                <p className="text-xs text-muted-foreground">
-                  This will end all active sessions
-                </p>
+                <p className="text-xs text-muted-foreground">This will end all active sessions</p>
               </div>
               <Button
                 variant="outline"
@@ -732,8 +878,7 @@ export default function Settings() {
                 onClick={() =>
                   toast({
                     title: "Blocked for safety",
-                    description:
-                      "Account deletion will be handled from Admin in this phase.",
+                    description: "Account deletion will be handled from Admin in this phase.",
                     variant: "destructive",
                   })
                 }
@@ -747,9 +892,7 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Logout</p>
-                <p className="text-xs text-muted-foreground">
-                  End your current session
-                </p>
+                <p className="text-xs text-muted-foreground">End your current session</p>
               </div>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 Logout

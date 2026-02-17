@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdmin } from "../_lib/firebaseAdmin";
-import { requireUser } from "../_lib/requireUser";
+import { getAdmin } from "../_lib/firebaseAdmin.js";
+import { requireUser } from "../_lib/requireUser.js";
+
 
 function normSlug(x: string) {
   return String(x || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");

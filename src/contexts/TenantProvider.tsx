@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getTenantSlugFromHostname } from "@/lib/tenant";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, limit, query, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthProvider";
 
 export type TenantProfile = {
@@ -24,30 +24,29 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth(); // Get logged-in user's profile
+  const { profile } = useAuth();
   const [tenantSlug, setTenantSlug] = useState<string | null>(null);
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTenantDomain, setIsTenantDomain] = useState(false);
 
   useEffect(() => {
-    // 1. First, try to get tenant slug from hostname (subdomain)
     const slugFromHostname = getTenantSlugFromHostname(window.location.hostname);
-    
+
     if (slugFromHostname) {
-      // On tenant subdomain (e.g., coaching.univ.live)
       setTenantSlug(slugFromHostname);
       setIsTenantDomain(true);
-    } else if (profile?.tenantSlug) {
-      // Fallback: if on main domain but educator is logged in, use their tenantSlug
-      // This allows educator dashboard to access tenant data from main domain
+      return;
+    }
+
+    if (profile?.tenantSlug) {
       setTenantSlug(profile.tenantSlug);
       setIsTenantDomain(false);
-    } else {
-      // No tenant context available
-      setTenantSlug(null);
-      setIsTenantDomain(false);
+      return;
     }
+
+    setTenantSlug(null);
+    setIsTenantDomain(false);
   }, [profile?.tenantSlug]);
 
   useEffect(() => {
@@ -59,28 +58,40 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
+
       setLoading(true);
       try {
-        const q = query(collection(db, "educators"), where("tenantSlug", "==", tenantSlug), limit(1));
-        const snap = await getDocs(q);
-
+        // tenants/{slug} -> educatorId
+        const mapSnap = await getDoc(doc(db, "tenants", tenantSlug));
         if (!alive) return;
 
-        if (snap.empty) {
+        if (!mapSnap.exists()) {
           setTenant(null);
-        } else {
-          const docSnap = snap.docs[0];
-          const data: any = docSnap.data() || {};
-          setTenant({
-            educatorId: docSnap.id,
-            tenantSlug,
-            coachingName: data.coachingName,
-            tagline: data.tagline,
-            contact: data.contact,
-            socials: data.socials,
-            websiteConfig: data.websiteConfig,
-          });
+          return;
         }
+
+        const map = mapSnap.data() as any;
+        const educatorId = String(map?.educatorId || "").trim();
+        if (!educatorId) {
+          setTenant(null);
+          return;
+        }
+
+        // educators/{id} -> metadata + website config
+        const eduSnap = await getDoc(doc(db, "educators", educatorId));
+        if (!alive) return;
+
+        const data: any = eduSnap.exists() ? eduSnap.data() : {};
+
+        setTenant({
+          educatorId,
+          tenantSlug,
+          coachingName: data?.coachingName,
+          tagline: data?.tagline,
+          contact: data?.contact,
+          socials: data?.socials,
+          websiteConfig: data?.websiteConfig,
+        });
       } finally {
         if (alive) setLoading(false);
       }
@@ -92,14 +103,11 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     };
   }, [tenantSlug]);
 
-  const value: TenantContextValue = {
-    tenant,
-    tenantSlug,
-    loading,
-    isTenantDomain,
-  };
-
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
+  return (
+    <TenantContext.Provider value={{ tenant, tenantSlug, isTenantDomain, loading }}>
+      {children}
+    </TenantContext.Provider>
+  );
 }
 
 export function useTenant() {

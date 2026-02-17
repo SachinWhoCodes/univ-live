@@ -77,7 +77,8 @@ const SUBJECTS = [
 
 export default function TestForm() {
   const navigate = useNavigate();
-  const { testId } = useParams<{ testId?: string }>();
+  const params = useParams<{ id?: string; testId?: string }>();
+const testId = params.testId || params.id;
 
   const { firebaseUser, profile, loading: authLoading } = useAuth();
   const isAdmin = profile?.role === "ADMIN";
