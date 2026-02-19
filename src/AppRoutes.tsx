@@ -28,6 +28,7 @@ import AdminQuestions from "@/pages/admin/Questions";
 import AdminTestBank from "@/pages/admin/TestBank";
 import AdminTestForm from "@/pages/admin/TestForm";
 import AdminLayout from "./pages/admin/AdminLayout";
+import AdminQuestionBank from "@/pages/admin/QuestionBank";
 
 // Educator Dashboard
 import EducatorLayout from "@/components/educator/EducatorLayout";
@@ -145,6 +146,7 @@ export default function AppRoutes() {
           <Route path="tests/new" element={<AdminTestForm />} />
           <Route path="tests/edit/:id" element={<AdminTestForm />} />
           <Route path="questions/:testId" element={<AdminQuestions />} />
+          <Route path="question-bank" element={<AdminQuestionBank />} />
         </Route>
 
           {/* Main Platform Educator Dashboard */}

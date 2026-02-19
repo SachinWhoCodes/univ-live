@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { Library } from "lucide-react";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
@@ -27,6 +28,7 @@ const sidebarItems = [
   { icon: GraduationCap, label: "Students", path: "/admin/students" },
   { icon: BarChart3, label: "Attempts", path: "/admin/attempts" },
   { icon: MessageSquare, label: "Support", path: "/admin/support" },
+  { icon: Library, label: "Question Bank", path: "/admin/question-bank" },
 ];
 
 // Mock admin check - in production use AuthContext
