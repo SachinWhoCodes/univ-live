@@ -307,16 +307,19 @@ const testId = params.testId || params.id;
         toast.success("Test created");
 
         if (goToQuestions) {
-          navigate(`/admin/tests/${ref.id}/questions`);
+          // AppRoutes uses /admin/questions/:testId
+          navigate(`/admin/questions/${ref.id}`);
         } else {
-          navigate(`/admin/tests/${ref.id}/edit`);
+          // AppRoutes uses /admin/tests/edit/:id
+          navigate(`/admin/tests/edit/${ref.id}`);
         }
       } else {
         await updateDoc(doc(db, "test_series", testId!), payload);
         toast.success("Test updated");
 
         if (goToQuestions) {
-          navigate(`/admin/tests/${testId}/questions`);
+          // AppRoutes uses /admin/questions/:testId
+          navigate(`/admin/questions/${testId}`);
         }
       }
     } catch (e) {

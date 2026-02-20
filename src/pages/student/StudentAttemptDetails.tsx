@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { HtmlView } from "@/lib/safeHtml";
 
 import { useAuth } from "@/contexts/AuthProvider";
 import { db } from "@/lib/firebase";
@@ -269,7 +270,7 @@ export default function StudentAttemptDetails() {
                   </div>
                 )}
 
-                <p className="font-medium">{q.stem}</p>
+                <HtmlView html={q.stem} className="font-medium" />
 
                 {q.options && q.type === "mcq" && (
                   <div className="space-y-2">
@@ -289,7 +290,10 @@ export default function StudentAttemptDetails() {
                               : "border-transparent bg-background/50"
                           )}
                         >
-                          <span className="font-medium">{String.fromCharCode(65 + j)}.</span> {opt.text}
+                          <div className="flex gap-2 items-start">
+                            <span className="font-medium shrink-0">{String.fromCharCode(65 + j)}.</span>
+                            <HtmlView html={opt.text} className="flex-1" />
+                          </div>
 
                           {isOptCorrect && <Badge className="ml-2 rounded-full bg-green-500">Correct</Badge>}
                           {isUser && !isOptCorrect && <Badge className="ml-2 rounded-full bg-red-500">Your Answer</Badge>}
@@ -315,7 +319,11 @@ export default function StudentAttemptDetails() {
 
                 <div className="p-4 rounded-xl bg-pastel-cream">
                   <p className="text-sm font-medium mb-1">Explanation</p>
-                  <p className="text-sm text-muted-foreground">{q.explanation?.trim() ? q.explanation : "No explanation available."}</p>
+                  {q.explanation?.trim() ? (
+                    <HtmlView html={q.explanation} className="text-sm text-muted-foreground" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No explanation available.</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

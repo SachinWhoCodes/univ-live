@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimerChip } from "@/components/student/TimerChip";
 import { CBTQuestionPalette } from "@/components/student/CBTQuestionPalette";
 import { cn } from "@/lib/utils";
+import { HtmlView } from "@/lib/safeHtml";
 
 import { useAuth } from "@/contexts/AuthProvider";
 import { useTenant } from "@/contexts/TenantProvider";
@@ -738,9 +739,10 @@ export default function StudentCBTAttempt() {
             )}
 
             <div>
-              <p className="font-semibold text-lg">
-                Q{currentIndex + 1}. {currentQuestion.stem}
-              </p>
+              <div className="font-semibold text-lg flex gap-2">
+                <span className="shrink-0">Q{currentIndex + 1}.</span>
+                <HtmlView html={currentQuestion.stem} className="flex-1" />
+              </div>
             </div>
 
             {currentQuestion.type === "mcq" && currentQuestion.options && (
@@ -762,8 +764,12 @@ export default function StudentCBTAttempt() {
                     )}
                   >
                     <RadioGroupItem value={option.id} id={`${currentQuestion.id}_${option.id}`} />
-                    <Label htmlFor={`${currentQuestion.id}_${option.id}`} className="flex-1 cursor-pointer">
-                      {String.fromCharCode(65 + i)}. {option.text}
+                    <Label
+                      htmlFor={`${currentQuestion.id}_${option.id}`}
+                      className="flex-1 cursor-pointer flex gap-2 items-start"
+                    >
+                      <span className="font-medium shrink-0">{String.fromCharCode(65 + i)}.</span>
+                      <HtmlView html={option.text} className="flex-1" />
                     </Label>
                   </div>
                 ))}

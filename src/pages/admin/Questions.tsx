@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
+  BookOpen,
   Plus,
   Search,
   Trash2,
@@ -26,6 +27,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   increment,
   onSnapshot,
   orderBy,
@@ -33,6 +35,7 @@ import {
   runTransaction,
   serverTimestamp,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 
 import { Button } from "@/components/ui/button";
@@ -90,9 +93,39 @@ type QuestionDoc = {
   isActive?: boolean;
   usageCount?: number;
 
+  // ✅ new: supports mixing global question bank + manual questions
+  source?: "manual" | "question_bank" | string;
+  bankQuestionId?: string;
+  contentFormat?: "text" | "html";
+
   createdAtTs?: Timestamp | null;
   updatedAtTs?: Timestamp | null;
 };
+
+type QBQuestion = {
+  id: string;
+  subject?: string;
+  topic?: string;
+  difficulty?: Difficulty;
+  question: string; // HTML
+  options: string[]; // HTML
+  correctOption: number;
+  explanation?: string;
+  marks?: number;
+  negativeMarks?: number;
+  updatedAtTs?: Timestamp | null;
+};
+
+function stripHtml(html: string) {
+  if (!html) return "";
+  try {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    return (tmp.textContent || tmp.innerText || "").replace(/\s+/g, " ").trim();
+  } catch {
+    return String(html);
+  }
+}
 
 function fmtDate(ts?: Timestamp | null) {
   if (!ts) return "—";
@@ -174,6 +207,16 @@ export default function Questions() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
+
+  // import from GLOBAL question bank
+  const [qbOpen, setQbOpen] = useState(false);
+  const [qbLoading, setQbLoading] = useState(false);
+  const [qbRows, setQbRows] = useState<QBQuestion[]>([]);
+  const [qbSearch, setQbSearch] = useState("");
+  const [qbSubject, setQbSubject] = useState<string>("all");
+  const [qbTopic, setQbTopic] = useState<string>("all");
+  const [qbDifficulty, setQbDifficulty] = useState<"all" | Difficulty>("all");
+  const [qbSelected, setQbSelected] = useState<Record<string, boolean>>({});
 
   // Auth
   useEffect(() => {
@@ -277,6 +320,9 @@ export default function Questions() {
             negativeMarks: data?.negativeMarks != null ? safeNum(data?.negativeMarks, 0) : undefined,
             isActive: data?.isActive !== false,
             usageCount: safeNum(data?.usageCount, 0),
+            source: safeStr(data?.source, undefined as any) as any,
+            bankQuestionId: safeStr(data?.bankQuestionId, "") || undefined,
+            contentFormat: (safeStr(data?.contentFormat, "") as any) || undefined,
             createdAtTs: (data?.createdAt as Timestamp) || null,
             updatedAtTs: (data?.updatedAt as Timestamp) || null,
           };
@@ -298,6 +344,182 @@ export default function Questions() {
 
     return () => unsub();
   }, [uid, selectedTestId]);
+
+  const existingBankIds = useMemo(() => {
+    const s = new Set<string>();
+    questions.forEach((q) => {
+      if (q.bankQuestionId) s.add(String(q.bankQuestionId));
+    });
+    return s;
+  }, [questions]);
+
+  // Load global question bank when dialog opens
+  useEffect(() => {
+    if (!uid || !qbOpen) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        setQbLoading(true);
+        const qRef = query(collection(db, "question_bank"), orderBy("updatedAt", "desc"));
+        const snap = await getDocs(qRef);
+        if (!alive) return;
+
+        const rows: QBQuestion[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            subject: safeStr(data?.subject, ""),
+            topic: safeStr(data?.topic, ""),
+            difficulty: normalizeDifficulty(data?.difficulty),
+            question: safeStr(data?.question, ""),
+            options: Array.isArray(data?.options) ? data.options.map(String) : [],
+            correctOption: safeNum(data?.correctOption, 0),
+            explanation: safeStr(data?.explanation, ""),
+            marks: data?.marks != null ? safeNum(data?.marks, 0) : undefined,
+            negativeMarks: data?.negativeMarks != null ? safeNum(data?.negativeMarks, 0) : undefined,
+            updatedAtTs: (data?.updatedAt as Timestamp) || null,
+          };
+        });
+
+        setQbRows(rows);
+        setQbSelected({});
+        setQbSearch("");
+        setQbSubject("all");
+        setQbTopic("all");
+        setQbDifficulty("all");
+      } catch (e) {
+        console.error(e);
+        toast({
+          title: "Failed to load question bank",
+          description: "Could not fetch global questions.",
+          variant: "destructive",
+        });
+      } finally {
+        setQbLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [uid, qbOpen]);
+
+  const qbSubjects = useMemo(() => {
+    const s = new Set<string>();
+    qbRows.forEach((q) => q.subject && s.add(q.subject));
+    return ["all", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [qbRows]);
+
+  const qbTopics = useMemo(() => {
+    const s = new Set<string>();
+    qbRows.forEach((q) => {
+      if (qbSubject !== "all" && q.subject !== qbSubject) return;
+      q.topic && s.add(q.topic);
+    });
+    return ["all", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [qbRows, qbSubject]);
+
+  const qbFiltered = useMemo(() => {
+    const q = qbSearch.trim().toLowerCase();
+    return qbRows.filter((x) => {
+      if (qbDifficulty !== "all" && (x.difficulty || "medium") !== qbDifficulty) return false;
+      if (qbSubject !== "all" && (x.subject || "") !== qbSubject) return false;
+      if (qbTopic !== "all" && (x.topic || "") !== qbTopic) return false;
+      if (!q) return true;
+      const hay = [stripHtml(x.question), x.subject || "", x.topic || "", ...(x.options || []).map(stripHtml)]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [qbRows, qbSearch, qbDifficulty, qbSubject, qbTopic]);
+
+  const qbSelectedIds = useMemo(() => Object.keys(qbSelected).filter((id) => qbSelected[id]), [qbSelected]);
+
+  async function importSelectedFromQuestionBank() {
+    if (!uid || !selectedTestId) return;
+    const rawIds = qbSelectedIds;
+    const ids = rawIds.filter((id) => !existingBankIds.has(id));
+    if (!ids.length) {
+      toast({ title: "Nothing to import", description: "All selected questions are already in this test." });
+      return;
+    }
+
+    const byId = new Map(qbRows.map((q) => [q.id, q] as const));
+    const items = ids.map((id) => byId.get(id)).filter(Boolean) as QBQuestion[];
+    if (!items.length) {
+      toast({ title: "Nothing to import", description: "Selected questions were not found." });
+      return;
+    }
+
+    try {
+      setQbLoading(true);
+
+      let batch = writeBatch(db);
+      let ops = 0;
+      let added = 0;
+
+      for (const q of items) {
+        const docRef = doc(collection(db, "test_series", selectedTestId, "questions"));
+
+        const payload: any = {
+          question: q.question,
+          options: Array.isArray(q.options) ? q.options : [],
+          correctOption: safeNum(q.correctOption, 0),
+          explanation: q.explanation || "",
+          difficulty: normalizeDifficulty(q.difficulty),
+          subject: q.subject || selectedTest?.subject || "",
+          topic: q.topic || "",
+          isActive: true,
+          usageCount: 0,
+
+          // link back to global bank
+          source: "question_bank",
+          bankQuestionId: q.id,
+          contentFormat: "html",
+
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+
+        if (q.marks != null) payload.marks = safeNum(q.marks, 0);
+        if (q.negativeMarks != null) payload.negativeMarks = safeNum(q.negativeMarks, 0);
+
+        batch.set(docRef, payload);
+
+        // optional: bump usageCount on the global question
+        batch.update(doc(db, "question_bank", q.id), {
+          usageCount: increment(1),
+          updatedAt: serverTimestamp(),
+        });
+
+        ops += 2;
+        added += 1;
+        if (ops >= 450) {
+          await batch.commit();
+          batch = writeBatch(db);
+          ops = 0;
+        }
+      }
+
+      // update test counts
+      batch.update(doc(db, "test_series", selectedTestId), {
+        questionsCount: increment(added),
+        updatedAt: serverTimestamp(),
+      });
+      ops += 1;
+
+      if (ops > 0) await batch.commit();
+
+      toast({ title: "Imported", description: `Added ${added} questions from Question Bank.` });
+      setQbOpen(false);
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Import failed", description: "Could not import from Question Bank.", variant: "destructive" });
+    } finally {
+      setQbLoading(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -412,6 +634,8 @@ export default function Questions() {
         topic: formTopic.trim() || "",
         isActive: !!formActive,
         usageCount: 0,
+        source: "manual",
+        contentFormat: "text",
         updatedAt: serverTimestamp(),
       };
 
@@ -545,7 +769,7 @@ export default function Questions() {
         const correct = safeNum(item?.correctOption, 0);
         if (!qText || opts.length < 2 || correct < 0 || correct >= opts.length) continue;
 
-        await addDoc(collection(db, "test_series", selectedTestId, "questions"), {
+        const payload: any = {
           question: qText,
           options: opts,
           correctOption: correct,
@@ -553,13 +777,18 @@ export default function Questions() {
           difficulty: normalizeDifficulty(item?.difficulty),
           subject: String(item?.subject || selectedTest?.subject || ""),
           topic: String(item?.topic || ""),
-          marks: item?.marks != null ? safeNum(item.marks, undefined as any) : undefined,
-          negativeMarks: item?.negativeMarks != null ? safeNum(item.negativeMarks, undefined as any) : undefined,
           isActive: item?.isActive !== false,
           usageCount: 0,
+          source: "manual",
+          contentFormat: "text",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        if (item?.marks != null) payload.marks = safeNum(item.marks, 0);
+        if (item?.negativeMarks != null) payload.negativeMarks = safeNum(item.negativeMarks, 0);
+
+        await addDoc(collection(db, "test_series", selectedTestId, "questions"), payload);
 
         added += 1;
       }
@@ -637,7 +866,8 @@ export default function Questions() {
               value={testSelectValue}
               onValueChange={(v) => {
                 setSelectedTestId(v);
-                navigate(`/admin/tests/${v}/questions`);
+                // AppRoutes uses /admin/questions/:testId
+                navigate(`/admin/questions/${v}`);
               }}
             >
               <SelectTrigger className="rounded-xl">
@@ -690,6 +920,160 @@ export default function Questions() {
                 </Button>
                 <Button className="rounded-xl gradient-bg text-white" onClick={bulkImport} disabled={bulkSaving}>
                   {bulkSaving ? "Importing..." : "Import"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={qbOpen} onOpenChange={setQbOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="rounded-xl" disabled={!selectedTestId}>
+                <BookOpen className="h-4 w-4 mr-2" />
+                Import from Question Bank
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>Import Questions from Global Question Bank</DialogTitle>
+                <DialogDescription>
+                  Select questions from <span className="font-mono">question_bank</span> and add them to this test.
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Filters */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+                <div className="lg:col-span-4">
+                  <Label className="text-xs">Search</Label>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={qbSearch}
+                      onChange={(e) => setQbSearch(e.target.value)}
+                      placeholder="Search question / option / topic..."
+                      className="pl-9 rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3">
+                  <Label className="text-xs">Subject</Label>
+                  <Select value={qbSubject} onValueChange={setQbSubject}>
+                    <SelectTrigger className="rounded-xl mt-1">
+                      <SelectValue placeholder="All subjects" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {qbSubjects.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s === "all" ? "All subjects" : s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="lg:col-span-3">
+                  <Label className="text-xs">Topic</Label>
+                  <Select value={qbTopic} onValueChange={setQbTopic}>
+                    <SelectTrigger className="rounded-xl mt-1">
+                      <SelectValue placeholder="All topics" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {qbTopics.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t === "all" ? "All topics" : t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <Label className="text-xs">Difficulty</Label>
+                  <Select value={qbDifficulty} onValueChange={(v: any) => setQbDifficulty(v)}>
+                    <SelectTrigger className="rounded-xl mt-1">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-border overflow-hidden">
+                <div className="p-3 flex items-center justify-between bg-muted/30">
+                  <p className="text-sm text-muted-foreground">
+                    Showing <span className="font-medium text-foreground">{qbFiltered.length}</span> / {qbRows.length}
+                  </p>
+                  <p className="text-sm">
+                    Selected: <span className="font-semibold">{qbSelectedIds.length}</span>
+                  </p>
+                </div>
+
+                <div className="max-h-[460px] overflow-auto">
+                  {qbLoading ? (
+                    <div className="p-8 flex items-center justify-center text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading question bank…
+                    </div>
+                  ) : qbFiltered.length === 0 ? (
+                    <div className="p-10 text-center text-muted-foreground">No questions match your filters.</div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {qbFiltered.map((q) => {
+                        const already = existingBankIds.has(q.id);
+                        const checked = !!qbSelected[q.id];
+                        return (
+                          <div key={q.id} className="p-3 flex gap-3 items-start">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={checked}
+                              disabled={already}
+                              onChange={(e) =>
+                                setQbSelected((prev) => ({ ...prev, [q.id]: e.target.checked }))
+                              }
+                            />
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <Badge variant="secondary" className={cn("rounded-full", difficultyBadge(normalizeDifficulty(q.difficulty)))}>
+                                  {normalizeDifficulty(q.difficulty)}
+                                </Badge>
+                                {q.subject ? <Badge variant="secondary" className="rounded-full">{q.subject}</Badge> : null}
+                                {q.topic ? <Badge variant="secondary" className="rounded-full">{q.topic}</Badge> : null}
+                                {already ? (
+                                  <Badge variant="secondary" className="rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" /> Already in test
+                                  </Badge>
+                                ) : null}
+                              </div>
+
+                              <div className="prose prose-sm dark:prose-invert max-w-none line-clamp-3" dangerouslySetInnerHTML={{ __html: q.question }} />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Options: {q.options?.length || 0}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" className="rounded-xl" onClick={() => setQbOpen(false)} disabled={qbLoading}>
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-xl gradient-bg text-white"
+                  onClick={importSelectedFromQuestionBank}
+                  disabled={qbLoading || qbSelectedIds.length === 0}
+                >
+                  {qbLoading ? "Importing..." : "Add Selected"}
                 </Button>
               </div>
             </DialogContent>
@@ -843,7 +1227,9 @@ export default function Questions() {
           ) : (
             <div className="space-y-3">
               {filtered.map((q, idx) => {
+                const isHtml = q.contentFormat === "html" || q.source === "question_bank" || /<\w+[\s\S]*>/i.test(q.question || "");
                 const correctText = q.options?.[q.correctOption] || "";
+                const correctTextPlain = stripHtml(correctText);
                 return (
                   <motion.div
                     key={q.id}
@@ -883,9 +1269,16 @@ export default function Questions() {
                               )}
                             </div>
 
-                            <p className="font-medium text-foreground leading-snug line-clamp-3">
-                              {q.question}
-                            </p>
+                            {isHtml ? (
+                              <div
+                                className="prose prose-sm dark:prose-invert max-w-none leading-snug line-clamp-3"
+                                dangerouslySetInnerHTML={{ __html: q.question }}
+                              />
+                            ) : (
+                              <p className="font-medium text-foreground leading-snug line-clamp-3">
+                                {q.question}
+                              </p>
+                            )}
 
                             {q.options?.length ? (
                               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -902,16 +1295,23 @@ export default function Questions() {
                                     <span className="text-xs text-muted-foreground mr-2">
                                       {String.fromCharCode(65 + i)}.
                                     </span>
-                                    <span className={cn(i === q.correctOption && "font-medium")}>
-                                      {opt}
-                                    </span>
+                                    {isHtml ? (
+                                      <span
+                                        className={cn(i === q.correctOption && "font-medium")}
+                                        dangerouslySetInnerHTML={{ __html: opt }}
+                                      />
+                                    ) : (
+                                      <span className={cn(i === q.correctOption && "font-medium")}>
+                                        {opt}
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
                             ) : null}
 
                             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                              <span>Correct: <span className="font-medium text-foreground">{correctText || "—"}</span></span>
+                              <span>Correct: <span className="font-medium text-foreground">{correctTextPlain || "—"}</span></span>
                               <span>Marks: <span className="font-medium text-foreground">{q.marks ?? selectedTest?.positiveMarks ?? "—"}</span></span>
                               <span>Neg: <span className="font-medium text-foreground">{q.negativeMarks ?? selectedTest?.negativeMarks ?? "—"}</span></span>
                               <span>Used: <span className="font-medium text-foreground">{q.usageCount ?? 0}</span></span>
