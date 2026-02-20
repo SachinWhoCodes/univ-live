@@ -1,45 +1,755 @@
-// src/pages/tenant/TenantHome.tsx
-import React from "react";
+// src/themes/coaching/theme2/TenantHome.tsx
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import {
+  ArrowRight,
+  Loader2,
+  Menu,
+  X,
+  Play,
+  FileText,
+  Star,
+  Instagram,
+  Youtube,
+  Facebook,
+  Linkedin,
+  Twitter,
+  Globe,
+  MessageCircle,
+  Send,
+  Phone,
+  MapPin,
+  Mail,
+  CheckCircle2
+} from "lucide-react";
+
 import { useTenant } from "@/contexts/TenantProvider";
-import Theme1Layout from "@/themes/coaching/theme1/Theme1Layout";
-import Theme1Hero from "@/themes/coaching/theme1/Theme1Hero";
-import Theme1Stats from "@/themes/coaching/theme1/Theme1Stats";
-import Theme1CoursesPreview from "@/themes/coaching/theme1/Theme1CoursesPreview";
-import Theme1Achievements from "@/themes/coaching/theme1/Theme1Achievements";
-import Theme1Faculty from "@/themes/coaching/theme1/Theme1Faculty";
-import Theme1Testimonials from "@/themes/coaching/theme1/Theme1Testimonials";
-import Theme1FAQ from "@/themes/coaching/theme1/Theme1FAQ";
-import Theme1CTA from "@/themes/coaching/theme1/Theme1CTA";
+import { db } from "@/lib/firebase";
+import { collection, documentId, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 
-export default function TenantHome() {
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+type StatItem = { label: string; value: string; icon?: string };
+type AchievementItem = { title: string; description: string; icon?: string };
+type FacultyItem = { name: string; subject?: string; designation?: string; experience?: string; bio?: string; image?: string };
+type TestimonialItem = { name: string; course?: string; rating?: number; text: string; avatar?: string };
+type FAQItem = { question: string; answer: string };
+
+type TestSeries = {
+  id: string;
+  title: string;
+  description: string;
+  price: string | number;
+  coverImage?: string;
+  subject?: string;
+  difficulty?: string;
+  testsCount?: number;
+  durationMinutes?: number;
+};
+
+function initials(name: string) {
+  return (name || "U")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((x) => x[0]?.toUpperCase())
+    .join("");
+}
+
+function isTruthyUrl(v: any) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+export default function TenantHomeTheme2() {
   const { tenant, loading } = useTenant();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  const [featured, setFeatured] = useState<TestSeries[]>([]);
+  const [loadingFeatured, setLoadingFeatured] = useState(true);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] text-zinc-500">
+        <Loader2 className="h-6 w-6 animate-spin mr-3" />
+        <span className="font-medium">Loading your experience...</span>
+      </div>
+    );
+  }
 
   if (!tenant) {
-    // If subdomain not found in DB, you might want to show a generic 404 or fallback
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold">Coaching not found</h2>
-          <p className="text-muted-foreground mt-2">This coaching website does not exist. Check the URL or contact support.</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB]">
+        <div className="text-center px-6">
+          <h2 className="text-3xl font-bold text-zinc-900 tracking-tight">Coaching not found</h2>
+          <p className="text-zinc-500 mt-3 text-lg">
+            This coaching website does not exist. Check the URL or contact support.
+          </p>
         </div>
       </div>
     );
   }
 
-  // Switch between themes later based on tenant.websiteConfig.theme
+  const config = tenant.websiteConfig || {};
+
+  const coachingName = config.coachingName || tenant.coachingName || "Your Institute";
+  const tagline = config.tagline || tenant.tagline || "Learn smarter. Score higher.";
+  const heroImage: string | undefined = config.heroImage;
+
+  const stats: StatItem[] = Array.isArray(config.stats) ? config.stats : [];
+  const achievements: AchievementItem[] = Array.isArray(config.achievements) ? config.achievements : [];
+  const faculty: FacultyItem[] = Array.isArray(config.faculty) ? config.faculty : [];
+  const testimonials: TestimonialItem[] = Array.isArray(config.testimonials) ? config.testimonials : [];
+
+  const faqs: FAQItem[] =
+    Array.isArray(config.faqs) && config.faqs.length > 0
+      ? config.faqs
+      : [
+          {
+            question: "How do I access the test series after purchase?",
+            answer: "Once you purchase (or enroll if free), the test series appears in your student dashboard under 'My Tests'.",
+          },
+          {
+            question: "Can I access content on mobile?",
+            answer: "Yes. The platform is mobile-responsive and works smoothly on phones and tablets.",
+          },
+          {
+            question: "Do you provide performance analytics?",
+            answer: "Yes. Students get score insights and progress tracking inside the dashboard.",
+          },
+          {
+            question: "Is there any demo / preview available?",
+            answer: "Many educators provide free tests or previews. Check the Featured section or login to see what's included.",
+          },
+        ];
+
+  const socials: Record<string, string> = useMemo(() => {
+    const s = (config.socials || {}) as Record<string, string>;
+    const cleaned: Record<string, string> = {};
+    Object.entries(s).forEach(([k, v]) => {
+      if (isTruthyUrl(v)) cleaned[k] = v.trim();
+    });
+    return cleaned;
+  }, [config.socials]);
+
+  const educatorId = tenant.educatorId;
+  const featuredIds: string[] = Array.isArray(config.featuredTestIds) ? config.featuredTestIds : [];
+  const featuredKey = featuredIds.join(",");
+
+  useEffect(() => {
+    if (!educatorId) return;
+
+    async function loadFeatured() {
+      setLoadingFeatured(true);
+      try {
+        let qRef;
+
+        if (featuredIds.length > 0) {
+          const safeIds = featuredIds.slice(0, 10);
+          qRef = query(
+            collection(db, "educators", educatorId, "my_tests"),
+            where(documentId(), "in", safeIds)
+          );
+        } else {
+          qRef = query(
+            collection(db, "educators", educatorId, "my_tests"),
+            orderBy("createdAt", "desc"),
+            limit(4)
+          );
+        }
+
+        const snap = await getDocs(qRef);
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        })) as TestSeries[];
+
+        setFeatured(rows);
+      } catch {
+        setFeatured([]);
+      } finally {
+        setLoadingFeatured(false);
+      }
+    }
+
+    loadFeatured();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [educatorId, featuredKey]);
+
+  const navLinks = [
+    { label: "Home", href: "#top" },
+    { label: "Tests", href: "#tests" },
+    { label: "Results", href: "#results" },
+    { label: "Faculty", href: "#faculty" },
+    { label: "Reviews", href: "#reviews" },
+    { label: "FAQs", href: "#faq" },
+  ];
+
+  const socialIconMap: Record<string, any> = {
+    instagram: Instagram,
+    youtube: Youtube,
+    facebook: Facebook,
+    linkedin: Linkedin,
+    twitter: Twitter,
+    website: Globe,
+    telegram: Send,
+    whatsapp: MessageCircle,
+  };
+
   return (
-    <Theme1Layout>
-      <Theme1Hero />
-      <Theme1Stats />
-      <Theme1CoursesPreview />
-      <Theme1Achievements />
-      <Theme1Faculty />
-      <Theme1Testimonials />
-      <Theme1FAQ />
-      <Theme1CTA />
-    </Theme1Layout>
+    <div id="top" className="min-h-screen bg-[#FAFAFA] text-zinc-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      {/* NAVBAR */}
+      <nav className="sticky top-0 z-50 bg-[#FAFAFA]/80 backdrop-blur-xl border-b border-zinc-200/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-20">
+          <Link to="/" className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-950 text-white shadow-sm">
+              <span className="text-base font-bold">
+                {coachingName?.trim()?.[0]?.toUpperCase() || "U"}
+              </span>
+            </div>
+            <span className="text-xl font-bold tracking-tight text-zinc-950">
+              {coachingName}
+            </span>
+          </Link>
+
+          <div className="hidden md:flex items-center gap-6">
+            {navLinks.map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                className="text-sm font-semibold text-zinc-600 hover:text-zinc-950 transition-colors"
+              >
+                {l.label}
+              </a>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link to="/login?role=student">
+              <Button variant="ghost" className="hidden md:inline-flex rounded-full px-6 font-semibold hover:bg-zinc-100">
+                Log in
+              </Button>
+            </Link>
+            <Link to="/signup">
+              <Button className="rounded-full px-7 bg-zinc-950 text-white hover:bg-zinc-800 font-semibold shadow-sm">
+                Get Started
+              </Button>
+            </Link>
+
+            <button className="ml-2 md:hidden p-2 text-zinc-600" onClick={() => setMobileOpen((s) => !s)}>
+              {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu */}
+        {mobileOpen && (
+          <div className="absolute top-20 left-0 w-full bg-white border-b border-zinc-200 p-4 md:hidden shadow-xl">
+            {navLinks.map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                onClick={() => setMobileOpen(false)}
+                className="block px-4 py-3 text-base font-semibold text-zinc-600 hover:text-zinc-950 hover:bg-zinc-50 rounded-xl"
+              >
+                {l.label}
+              </a>
+            ))}
+            <div className="mt-4 px-2">
+              <Link to="/login?role=student" onClick={() => setMobileOpen(false)}>
+                <Button variant="outline" className="w-full rounded-full font-semibold border-zinc-200">
+                  Log in
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+      </nav>
+
+      {/* HERO SECTION */}
+      <section className="relative pt-20 pb-24 lg:pt-32 lg:pb-32 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            
+            {/* Left Content */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="max-w-2xl"
+            >
+              {/* Pill Tag */}
+              <div className="inline-flex items-center gap-2 rounded-full bg-white border border-zinc-200 px-4 py-1.5 shadow-sm mb-8">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                  {tagline}
+                </span>
+              </div>
+
+              <h1 className="text-5xl sm:text-6xl lg:text-[72px] font-extrabold tracking-tighter text-zinc-950 leading-[1.05] mb-6">
+                Build skills that <br className="hidden sm:block" />
+                <span className="text-zinc-500">work when you don't</span>
+              </h1>
+
+              <p className="text-lg sm:text-xl text-zinc-600 mb-10 leading-relaxed max-w-lg">
+                Turn your efforts into top-tier results. Structured test series, expert faculty, and deep analytics designed to give you freedom over your scores.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-4 mb-10">
+                <a href="#tests" className="w-full sm:w-auto">
+                  <Button className="w-full sm:w-auto rounded-full bg-zinc-950 text-white hover:bg-zinc-800 px-8 py-6 text-base font-semibold shadow-xl shadow-zinc-900/10">
+                    Start Learning
+                  </Button>
+                </a>
+                <Link to="/login?role=student" className="w-full sm:w-auto">
+                  <Button variant="outline" className="w-full sm:w-auto rounded-full bg-white border-zinc-200 text-zinc-950 hover:bg-zinc-50 px-8 py-6 text-base font-semibold shadow-sm">
+                    <Play className="mr-2 h-4 w-4 fill-zinc-900" />
+                    Watch free preview
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Trust / Stats under buttons */}
+              {(stats?.length > 0) && (
+                <div className="flex items-center gap-6 pt-2">
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star key={i} className="h-5 w-5 fill-orange-400 text-orange-400" />
+                    ))}
+                  </div>
+                  <div className="flex gap-4">
+                    {stats.slice(0, 2).map((s, idx) => (
+                      <div key={idx} className="text-sm font-medium text-zinc-600">
+                        <span className="font-bold text-zinc-950">{s.value}</span> {s.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+
+            {/* Right Media (Hero Image) */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
+              className="relative lg:ml-auto w-full max-w-xl"
+            >
+              <div className="relative rounded-[2rem] overflow-hidden bg-zinc-100 border border-zinc-200 shadow-2xl shadow-zinc-900/5 aspect-[4/3]">
+                {heroImage ? (
+                  <img src={heroImage} alt={coachingName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400">
+                    <FileText className="h-12 w-12 mb-3 opacity-50" />
+                    <p className="font-medium text-sm">Add a hero image in settings</p>
+                  </div>
+                )}
+                
+                {/* Floating UI Elements (Optional flair matching design) */}
+                <div className="absolute bottom-6 left-6 right-6 bg-white/90 backdrop-blur-md border border-white/20 p-4 rounded-2xl shadow-lg flex items-center gap-4">
+                  <div className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-zinc-950">New milestone unlocked</p>
+                    <p className="text-xs font-medium text-zinc-500">Ready to conquer the next test.</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* HIGHLIGHTS (Burnt out from the rat race style) */}
+      <section className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="inline-flex items-center justify-center rounded-full bg-zinc-100 px-4 py-1.5 mb-6">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-600">
+                IS THIS YOU?
+              </span>
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-zinc-950 leading-tight">
+              Burnt out from <br className="hidden sm:block" /> scattered prep?
+            </h2>
+            <p className="mt-6 text-lg text-zinc-500 leading-relaxed">
+              Are you stuck studying endless hours without seeing real improvement in your mock scores? It's time for a structured approach.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {(achievements.length ? achievements : [
+              { title: "Structured Test Series", description: "Chapter-wise, subject-wise, and full mocks designed to challenge you exactly where needed." },
+              { title: "No more guesswork", description: "Detailed analytics show you precisely which topics to revise, saving you hundreds of hours." },
+              { title: "Expert Faculty", description: "Guidance and doubt resolution from top educators who have actually been there." },
+            ]).slice(0, 3).map((a, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                className="bg-[#FAFAFA] rounded-[2rem] p-8 border border-zinc-100 shadow-sm"
+              >
+                <h3 className="text-xl font-bold text-zinc-950 mb-3">{a.title}</h3>
+                <p className="text-zinc-500 leading-relaxed text-sm sm:text-base">
+                  {a.description}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURED TEST SERIES (Cards inspired by the dark image style but kept clean) */}
+      <section id="tests" className="py-24 bg-[#FAFAFA]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+            <div>
+               <div className="inline-flex items-center justify-center rounded-full bg-white border border-zinc-200 px-4 py-1.5 mb-6 shadow-sm">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                  EXAM CENTER
+                </span>
+              </div>
+              <h2 className="text-4xl font-extrabold tracking-tight text-zinc-950">
+                Turn your knowledge <br /> into top scores
+              </h2>
+            </div>
+            <Link to="/courses">
+              <Button variant="outline" className="rounded-full bg-white border-zinc-200 text-zinc-950 font-semibold px-6 hover:bg-zinc-50 shadow-sm">
+                View all series
+              </Button>
+            </Link>
+          </div>
+
+          {loadingFeatured ? (
+            <div className="py-20 flex justify-center text-zinc-500">
+              <Loader2 className="h-6 w-6 animate-spin mr-3" />
+              <span className="font-medium">Loading test series...</span>
+            </div>
+          ) : featured.length === 0 ? (
+            <div className="py-20 text-center text-zinc-500 font-medium bg-white rounded-3xl border border-zinc-100">
+              No featured series available right now.
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {featured.slice(0, 4).map((t, idx) => (
+                <motion.div
+                  key={t.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: idx * 0.1 }}
+                >
+                  <Card className="h-full flex flex-col overflow-hidden rounded-[1.5rem] border-zinc-200 shadow-sm hover:shadow-xl transition-all duration-300 bg-white group cursor-pointer">
+                    <div className="aspect-[4/3] bg-zinc-100 overflow-hidden relative">
+                      {t.coverImage ? (
+                        <img src={t.coverImage} alt={t.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-zinc-300">
+                          <FileText className="h-12 w-12" />
+                        </div>
+                      )}
+                      {t.subject && (
+                        <div className="absolute top-4 left-4">
+                          <span className="bg-white/90 backdrop-blur-sm text-zinc-900 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">
+                            {t.subject}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <CardContent className="p-6 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-zinc-950 leading-tight mb-2 line-clamp-2">
+                          {t.title}
+                        </h3>
+                        <p className="text-sm text-zinc-500 line-clamp-2 mb-6 leading-relaxed">
+                          {t.description}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mt-auto">
+                        <span className="text-lg font-extrabold text-zinc-950">
+                          {t.price === "Included" || t.price == 0 ? "Free" : `₹${t.price}`}
+                        </span>
+                        <Link to="/login?role=student">
+                          <Button size="sm" className="rounded-full bg-zinc-950 text-white font-semibold hover:bg-zinc-800">
+                            Enroll
+                          </Button>
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* FACULTY SECTION */}
+      <section id="faculty" className="py-24 bg-white border-y border-zinc-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+           <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="inline-flex items-center justify-center rounded-full bg-zinc-100 px-4 py-1.5 mb-6">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-600">
+                INSTRUCTORS
+              </span>
+            </div>
+            <h2 className="text-4xl font-extrabold tracking-tight text-zinc-950">
+              Learn from the best
+            </h2>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {(faculty.length ? faculty : []).slice(0, 6).map((f, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: idx * 0.1 }}
+                className="bg-[#FAFAFA] rounded-[2rem] p-6 sm:p-8 border border-zinc-100 flex flex-col items-center text-center"
+              >
+                <Avatar className="h-24 w-24 mb-5 border-4 border-white shadow-sm">
+                  <AvatarImage src={f.image} className="object-cover" />
+                  <AvatarFallback className="bg-zinc-200 text-zinc-600 text-xl font-bold">{initials(f.name)}</AvatarFallback>
+                </Avatar>
+                <h3 className="text-xl font-bold text-zinc-950">{f.name}</h3>
+                <p className="text-sm font-semibold text-indigo-600 mt-1">
+                  {[f.designation, f.subject].filter(Boolean).join(" • ") || "Faculty"}
+                </p>
+                {f.experience && (
+                  <p className="text-xs text-zinc-500 font-medium mt-2 bg-white px-3 py-1 rounded-full border border-zinc-200">
+                    {f.experience} Experience
+                  </p>
+                )}
+                {f.bio && (
+                  <p className="text-sm text-zinc-500 mt-4 leading-relaxed line-clamp-3">
+                    {f.bio}
+                  </p>
+                )}
+              </motion.div>
+            ))}
+          </div>
+          
+          {(!faculty || faculty.length === 0) && (
+            <div className="text-center text-zinc-500 bg-[#FAFAFA] rounded-3xl p-10 border border-zinc-100">
+              No instructors added yet.
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* TESTIMONIALS (Exact match to Screenshot 3 styling) */}
+      <section id="reviews" className="py-24 bg-[#FAFAFA]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="inline-flex items-center justify-center rounded-full bg-indigo-50 border border-indigo-100 px-4 py-1.5 mb-6">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                PROOF THAT IT WORKS
+              </span>
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-zinc-950 leading-tight">
+              Real people turning <br className="hidden sm:block" />
+              their effort into success
+            </h2>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {(testimonials.length ? testimonials : []).slice(0, 3).map((t, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                className="bg-white rounded-[2rem] p-8 sm:p-10 border border-zinc-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col items-center text-center"
+              >
+                <div className="flex gap-1 mb-6">
+                  {Array.from({ length: Math.max(1, Math.min(5, t.rating || 5)) }).map((_, i) => (
+                    <Star key={i} className="h-6 w-6 fill-orange-400 text-orange-400" />
+                  ))}
+                </div>
+                
+                <p className="text-lg text-zinc-600 leading-relaxed mb-8 flex-1">
+                  "{t.text}"
+                </p>
+
+                <div className="flex flex-col items-center gap-4 w-full">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-12 w-12 border border-zinc-200">
+                      <AvatarImage src={t.avatar} className="object-cover" />
+                      <AvatarFallback className="bg-zinc-100 text-zinc-600 font-bold">{initials(t.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-zinc-950">{t.name}</p>
+                    </div>
+                  </div>
+                  {t.course && (
+                    <div className="w-full mt-2">
+                      <span className="inline-block bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-lg w-full truncate">
+                        {t.course}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQS */}
+      <section id="faq" className="py-24 bg-white border-y border-zinc-100">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-extrabold tracking-tight text-zinc-950">
+              Frequently asked questions
+            </h2>
+          </div>
+
+          <Accordion type="single" collapsible className="space-y-4">
+            {faqs.map((f, idx) => (
+              <AccordionItem key={idx} value={`faq-${idx}`} className="border border-zinc-200 bg-[#FAFAFA] rounded-2xl px-6 py-2 overflow-hidden data-[state=open]:bg-white data-[state=open]:shadow-md transition-all">
+                <AccordionTrigger className="text-left text-lg font-bold text-zinc-900 hover:no-underline py-4">
+                  {f.question}
+                </AccordionTrigger>
+                <AccordionContent className="text-zinc-600 text-base leading-relaxed pb-4">
+                  {f.answer}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+      <section className="py-24 bg-[#FAFAFA]">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-zinc-950 rounded-[3rem] p-10 sm:p-20 text-center relative overflow-hidden shadow-2xl">
+            {/* Subtle background glow effect */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/20 rounded-full blur-[120px] pointer-events-none" />
+            
+            <div className="relative z-10">
+              <h2 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white mb-6">
+                Stop waiting. <br /> Start scaling your scores.
+              </h2>
+              <p className="text-xl text-zinc-400 mb-10 max-w-2xl mx-auto">
+                Join thousands of students who have already transformed their preparation with {coachingName}.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                <Link to="/signup">
+                  <Button className="w-full sm:w-auto rounded-full bg-white text-zinc-950 hover:bg-zinc-100 px-10 py-7 text-lg font-bold">
+                    Get Started Now
+                  </Button>
+                </Link>
+                <Link to="/courses">
+                  <Button variant="outline" className="w-full sm:w-auto rounded-full bg-transparent border-zinc-700 text-white hover:bg-zinc-900 hover:text-white px-10 py-7 text-lg font-bold">
+                    Browse Courses
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="bg-white border-t border-zinc-200 pt-16 pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+            <div className="md:col-span-1">
+              <div className="flex items-center gap-2 mb-4">
+                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-950 text-white shadow-sm">
+                  <span className="text-sm font-bold">
+                    {coachingName?.trim()?.[0]?.toUpperCase() || "U"}
+                  </span>
+                </div>
+                <span className="text-xl font-bold tracking-tight text-zinc-950">{coachingName}</span>
+              </div>
+              <p className="text-zinc-500 text-sm leading-relaxed mb-6">
+                {tagline}
+              </p>
+              <div className="flex gap-4">
+                {Object.entries(socials).map(([k, v]) => {
+                  const Icon = socialIconMap[k];
+                  if (!Icon) return null;
+                  return (
+                    <a key={k} href={v} target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-zinc-900 transition-colors">
+                      <Icon className="h-5 w-5" />
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-zinc-950 mb-4">Platform</h4>
+              <ul className="space-y-3">
+                <li><Link to="/" className="text-zinc-500 hover:text-zinc-950 text-sm font-medium">Home</Link></li>
+                <li><Link to="/courses" className="text-zinc-500 hover:text-zinc-950 text-sm font-medium">Test Series</Link></li>
+                <li><Link to="/login?role=student" className="text-zinc-500 hover:text-zinc-950 text-sm font-medium">Student Login</Link></li>
+                <li><Link to="/signup" className="text-zinc-500 hover:text-zinc-950 text-sm font-medium">Create Account</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-zinc-950 mb-4">Contact</h4>
+              <ul className="space-y-3">
+                 {tenant.contact?.phone && (
+                  <li>
+                    <a href={`tel:${tenant.contact.phone}`} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-950 text-sm font-medium">
+                      <Phone className="h-4 w-4" /> {tenant.contact.phone}
+                    </a>
+                  </li>
+                )}
+                {tenant.contact?.email && (
+                  <li>
+                    <a href={`mailto:${tenant.contact.email}`} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-950 text-sm font-medium">
+                      <Mail className="h-4 w-4" /> {tenant.contact.email}
+                    </a>
+                  </li>
+                )}
+                {tenant.contact?.address && (
+                  <li className="flex items-start gap-2 text-zinc-500 text-sm font-medium">
+                    <MapPin className="h-4 w-4 mt-0.5 shrink-0" /> 
+                    <span>{tenant.contact.address}</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            <div>
+               <h4 className="font-bold text-zinc-950 mb-4">Powered By</h4>
+               <p className="text-zinc-500 text-sm leading-relaxed mb-4">
+                 Built on UNIV.LIVE to help educators scale their testing and reach.
+               </p>
+               <div className="inline-flex items-center justify-center rounded-full bg-zinc-100 px-3 py-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
+                  Made with <Star className="h-3 w-3 fill-zinc-600" />
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-200 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-sm font-medium text-zinc-500">
+              © {new Date().getFullYear()} {coachingName}. All rights reserved.
+            </p>
+            <div className="flex gap-6 text-sm font-medium text-zinc-500">
+              <a href="#" className="hover:text-zinc-950">Privacy Policy</a>
+              <a href="#" className="hover:text-zinc-950">Terms of Service</a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
-
