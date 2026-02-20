@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import JSZip from "jszip";
 
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import {
   Timestamp,
   addDoc,
@@ -30,7 +30,6 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -186,20 +185,10 @@ function safeBaseNameFromSrc(src: string) {
   }
 }
 
-async function uploadImageToImageKitOrStorage(file: File): Promise<string> {
-  // Primary: ImageKit
-  try {
-    const { url } = await uploadToImageKit(file, file.name, "/question-bank");
-    if (url) return url;
-  } catch {
-    // fallback below
-  }
-
-  // Fallback: Firebase Storage (keeps editor usable even if ImageKit is down)
-  const path = `question_bank/uploads/${Date.now()}_${Math.random().toString(16).slice(2)}_${file.name}`;
-  const sref = ref(storage, path);
-  await uploadBytes(sref, file);
-  return await getDownloadURL(sref);
+async function uploadQuestionImageToImageKit(file: File): Promise<string> {
+  const { url } = await uploadToImageKit(file, file.name, "/question-bank");
+  if (!url) throw new Error("ImageKit upload returned no URL");
+  return url;
 }
 
 
@@ -266,7 +255,7 @@ function RichHtmlEditor({
     setBusy(true);
     try {
       for (const f of list) {
-        const url = await uploadImageToImageKitOrStorage(f);
+        const url = await uploadQuestionImageToImageKit(f);
         insertHtmlAtCursor(`<img src="${url}" alt="image" />`);
       }
       toast({ title: "Image added", description: "Image uploaded and inserted." });
@@ -605,7 +594,7 @@ export default function QuestionBank() {
 	    if (!blob) continue;
 
 	    const file = new File([blob], base, { type: blob.type || "image/png" });
-	    const url = await uploadImageToImageKitOrStorage(file);
+	    const url = await uploadQuestionImageToImageKit(file);
 
 	    uploadedCache.set(base, url);
 	    out = out.replaceAll(src, url);
@@ -631,6 +620,8 @@ export default function QuestionBank() {
       let ops = 0;
       let done = 0;
 
+      const uploadedCache = new Map<string, string>();
+
       for (let i = 0; i < raw.length; i++) {
         const q = raw[i];
         const id = String(q.id || q._id || "").trim();
@@ -642,25 +633,23 @@ export default function QuestionBank() {
         const marks = typeof q.mark === "number" ? q.mark : 4;
         const negativeMarks = typeof q.penalty === "number" ? q.penalty : -1;
 
-        const uploadedCache = new Map<string, string>();
-
-const questionHtml = await replaceImagesInHtml(String(q.text || ""), imageMap, uploadedCache);
+        const questionHtml = await replaceImagesInHtml(String(q.text || ""), imageMap, uploadedCache);
 
         const opts = Array.isArray(q.options?.option) ? q.options!.option! : [];
         const optionsHtml = await Promise.all(
-  opts.slice(0, 4).map(async (o) =>
-    replaceImagesInHtml(String(o?.content || ""), imageMap, uploadedCache)
-  )
-);
+          opts.slice(0, 4).map(async (o) =>
+            replaceImagesInHtml(String(o?.content || ""), imageMap, uploadedCache)
+          )
+        );
 
         const corr = q.answer?.correctOptions?.option?.[0];
         const correctIdx = typeof corr === "number" ? Math.max(0, Math.min(3, corr - 1)) : 0;
 
         const explanationHtml = await replaceImagesInHtml(
-  String(q.answer?.solution?.text || ""),
-  imageMap,
-  uploadedCache
-);
+          String(q.answer?.solution?.text || ""),
+          imageMap,
+          uploadedCache
+        );
         const payload: Partial<QBQuestion> = {
           subject,
           topic,
@@ -1096,4 +1085,3 @@ const questionHtml = await replaceImagesInHtml(String(q.text || ""), imageMap, u
     </div>
   );
 }
-
