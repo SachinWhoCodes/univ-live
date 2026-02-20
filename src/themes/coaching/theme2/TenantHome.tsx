@@ -573,10 +573,10 @@ const finalHeroImage = config.heroImage || tenant.heroImage || defaultHeroImage;
                      {/* Placeholder for achievement image */}
                      <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 to-transparent z-10" />
                      <img 
-			  src="https://plus.unsplash.com/premium_photo-1770480460854-b1170b7b282a?q=80&w=895&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" 
-			  alt="Main Highlight" 
-			  className="w-full h-full object-cover" 
-			/>
+                        src="https://plus.unsplash.com/premium_photo-1770480460854-b1170b7b282a?q=80&w=895&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" 
+                        alt="Main Highlight" 
+                        className="w-full h-full object-cover" 
+                      />
                      <div className="absolute bottom-6 left-6 z-20 pr-6">
                         <h3 className="text-2xl font-medium text-white leading-tight">{achievements[0].title}</h3>
                         <p className="text-white/80 mt-2 line-clamp-2 text-sm">{achievements[0].description}</p>
@@ -597,10 +597,11 @@ const finalHeroImage = config.heroImage || tenant.heroImage || defaultHeroImage;
                    <div className="aspect-video overflow-hidden rounded-sm bg-stone-100 mb-4 relative">
                       {/* Using generic placeholders for achievements lacking images to match Image 5 style */}
                       <img 
-			  src="https://plus.unsplash.com/premium_photo-1713229181330-1d1671608945?q=80&w=862&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" 
-			  alt="Secondary Highlight" 
-			  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-			/>
+                        src="https://plus.unsplash.com/premium_photo-1713229181330-1d1671608945?q=80&w=862&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" 
+                        alt="Secondary Highlight" 
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                      />
+                    </div>
                    <span className="text-xs uppercase tracking-wider text-stone-500 mb-2 font-medium">Highlight</span>
                    <h3 className="text-xl font-medium text-stone-900 mb-2">{a.title}</h3>
                    <p className="text-stone-600 font-light line-clamp-2">{a.description}</p>
