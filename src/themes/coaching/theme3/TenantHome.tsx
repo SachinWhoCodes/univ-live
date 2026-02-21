@@ -35,6 +35,7 @@ import { collection, documentId, getDocs, limit, orderBy, query, where } from "f
 
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 
 type FacultyItem = { name: string; subject?: string; designation?: string; experience?: string; bio?: string; image?: string };
 type TestimonialItem = { name: string; course?: string; rating?: number; text: string; avatar?: string };
