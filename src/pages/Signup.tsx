@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Loader2, Home } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +30,15 @@ export default function Signup() {
   const roleParam = (searchParams.get("role") || "").toLowerCase();
   const [role, setRole] = useState<RoleUI>(roleParam === "educator" ? "educator" : "student");
   const effectiveRole: RoleUI = isTenantDomain ? "student" : role;
+
+  // If user didn't provide a role via query param, default to educator on main domain.
+  useEffect(() => {
+    if (tenantLoading) return;
+    if (!roleParam) {
+      if (!isTenantDomain) setRole("educator");
+      else setRole("student");
+    }
+  }, [isTenantDomain, tenantLoading, roleParam]);
 
   const [name, setName] = useState("");
   const [coachingName, setCoachingName] = useState("");
