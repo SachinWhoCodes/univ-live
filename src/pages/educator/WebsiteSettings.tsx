@@ -515,10 +515,13 @@ export default function WebsiteSettings() {
                 <button
                   type="button"
                   onClick={() => setThemeId("theme3")}
-                  className="text-left rounded-xl border p-4 opacity-60 cursor-not-allowed"
+                  className={
+                    `text-left rounded-xl border p-4 transition-all hover:bg-muted/40 ` +
+                    (themeId === "theme3" ? "border-primary ring-1 ring-primary/20 bg-primary/5" : "border-border")
+                  }
                 >
                   <div className="font-semibold">Theme 3</div>
-                  <div className="text-xs text-muted-foreground mt-1">More options coming</div>
+                  <div className="text-xs text-muted-foreground mt-1">Dark futuristic styish look</div>
                   <div className="text-xs mt-3">New Arrival</div>
                 </button>
               </div>

@@ -44,7 +44,7 @@ const sidebarItems = [
   { icon: Key, label: "Access Codes", href: "/educator/access-codes" },
   { icon: BarChart3, label: "Analytics", href: "/educator/analytics" },
   { icon: MessageSquare, label: "Messages", href: "/educator/messages", badge: 3 },
-  { icon: Globe, label: "Website Settings", href: "/educator/website-settings" },
+  { icon: Globe, label: "Edit Theme/Website", href: "/educator/website-settings" },
   { icon: CreditCard, label: "Billing & Plan", href: "/educator/billing" },
   { icon: Settings, label: "Settings", href: "/educator/settings" },
 ];
@@ -84,8 +84,8 @@ export default function EducatorLayout() {
             <Link to="/" className="flex items-center gap-2">
               <img src={univLogo} alt="UNIV.LIVE" className="h-8 w-auto" />
               <span className="font-display font-bold text-lg">
-                <span className="gradient-text">UNIV</span>
-                <span className="text-foreground">.LIVE</span>
+                {/* <span className="gradient-text">UNIV</span>
+                <span className="text-foreground">.LIVE</span> */}
               </span>
             </Link>
             <Button
