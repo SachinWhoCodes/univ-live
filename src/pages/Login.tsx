@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Loader2, Home } from "lucide-react";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -27,6 +27,15 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const effectiveRole: RoleUI = isTenantDomain ? "student" : role;
+
+  // If user didn't provide a role via query param, default to educator on main domain.
+  useEffect(() => {
+    if (tenantLoading) return;
+    if (!roleParam) {
+      if (!isTenantDomain) setRole("educator");
+      else setRole("student");
+    }
+  }, [isTenantDomain, tenantLoading, roleParam]);
 
   const title = useMemo(() => {
     if (tenantLoading) return "Loading…";
@@ -130,7 +139,7 @@ export default function Login() {
       <div className="flex flex-col min-h-screen p-6 lg:p-12 relative">
         {/* Header / Nav */}
         <div className="flex justify-between items-center mb-8">
-          <div className="font-bold text-2xl tracking-tighter">GRAPHY</div>
+          <div className="font-bold text-2xl tracking-tighter">UNIV.LIVE</div>
           <Link
             to="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -150,26 +159,7 @@ export default function Login() {
               </p>
             </div>
 
-            {!isTenantDomain && (
-              <div className="flex gap-2 p-1 bg-muted rounded-lg">
-                <Button
-                  type="button"
-                  variant={effectiveRole === "student" ? "default" : "ghost"}
-                  className="w-full"
-                  onClick={() => setRole("student")}
-                >
-                  Student
-                </Button>
-                <Button
-                  type="button"
-                  variant={effectiveRole === "educator" ? "default" : "ghost"}
-                  className="w-full"
-                  onClick={() => setRole("educator")}
-                >
-                  Educator
-                </Button>
-              </div>
-            )}
+            {/* role is set via useEffect; avoid state changes during render */}
 
             {/* Dummy Google Login */}
             <Button

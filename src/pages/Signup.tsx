@@ -197,7 +197,7 @@ export default function Signup() {
       <div className="flex flex-col min-h-screen p-6 lg:p-12 relative">
         {/* Header / Nav */}
         <div className="flex justify-between items-center mb-6">
-          <div className="font-bold text-2xl tracking-tighter">GRAPHY</div>
+          <div className="font-bold text-2xl tracking-tighter">UNIV.LIVE</div>
           <Link
             to="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
