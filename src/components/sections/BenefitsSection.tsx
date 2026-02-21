@@ -6,6 +6,13 @@ import { Link } from "react-router-dom";
 const benefits = [
   {
     icon: FileText,
+    title: "Real Exam–Like Test Experience",
+    description: "Feels exactly like the actual CUET exam with authentic interface, timer, and navigation.",
+    gradient: "from-orange-500/20 to-red-500/20",
+    iconColor: "text-orange-600",
+  },
+  {
+    icon: FileText,
     title: "10 Full-Length CUET Mock Tests",
     description: "Curated by top academic teams with case-based, fill-in-the-blanks, statement-based, match-the-following, and assertion-reasoning questions.",
     gradient: "from-blue-500/20 to-primary/20",
@@ -38,13 +45,6 @@ const benefits = [
     description: "No setup fees, no upfront cost — you pay only when students enroll.",
     gradient: "from-pink-500/20 to-orange-500/20",
     iconColor: "text-pink-600",
-  },
-  {
-    icon: FileText,
-    title: "Real Exam–Like Test Experience",
-    description: "Feels exactly like the actual CUET exam with authentic interface, timer, and navigation.",
-    gradient: "from-orange-500/20 to-red-500/20",
-    iconColor: "text-orange-600",
   },
 ];
 

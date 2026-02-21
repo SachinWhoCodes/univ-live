@@ -14,9 +14,9 @@ const Index = () => {
       <StepsSection />
       <BenefitsSection />
       <PricingSection />
+      <CTASection />
       <TestimonialsSection />
       <TeamSection />
-      <CTASection />
     </Layout>
   );
 };
