@@ -152,6 +152,7 @@ export default function StudentCBTAttempt() {
   const [durationSec, setDurationSec] = useState(0);
 
   const [isStarted, setIsStarted] = useState(false);
+  const [startDialogOpen, setStartDialogOpen] = useState(true);
   const [instructionsOpen, setInstructionsOpen] = useState(true);
   const [instructionsChecked, setInstructionsChecked] = useState(false);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
@@ -343,12 +344,12 @@ export default function StudentCBTAttempt() {
           setDurationSec(safeNumber(foundAttempt.durationSec, meta.durationMinutes * 60));
 
           setIsStarted(false);
-          setInstructionsOpen(true);
+          setStartDialogOpen(true);
         } else {
           setAttemptId(null);
           setAttemptStartedAtMs(null);
           setIsStarted(false);
-          setInstructionsOpen(true);
+          setStartDialogOpen(true);
         }
       } catch (e: any) {
         console.error(e);
@@ -368,7 +369,17 @@ export default function StudentCBTAttempt() {
     };
   }, [testId, authLoading, tenantLoading, firebaseUser, educatorId, attemptIdStorageKey]);
 
-  // Keep section in sync
+  
+  // Always show instructions gate before starting / resuming
+  useEffect(() => {
+    if (loading || authLoading || tenantLoading) return;
+    if (!isStarted) {
+      setInstructionsOpen(true);
+      setInstructionsChecked(false);
+    }
+  }, [loading, authLoading, tenantLoading, isStarted, testId]);
+
+// Keep section in sync
   useEffect(() => {
     const q = questions[currentIndex];
     if (q?.sectionId) setCurrentSectionId(q.sectionId);
@@ -402,6 +413,16 @@ export default function StudentCBTAttempt() {
       exitFullscreenSafe();
     };
   }, []);
+
+  // Hide any app sidebars/scroll while attempting (CBT should feel like a dedicated screen)
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
 
   const goToIndex = (idx: number) => {
     const next = Math.max(0, Math.min(idx, questions.length - 1));
@@ -468,7 +489,7 @@ export default function StudentCBTAttempt() {
       setTimerStartSeconds(remaining);
 
       setIsStarted(true);
-      setInstructionsOpen(false);
+      setStartDialogOpen(false);
     } catch (e) {
       console.error(e);
       toast.error("Failed to start test");
@@ -627,107 +648,87 @@ export default function StudentCBTAttempt() {
   const timerKey = isStarted ? `running_${attemptId || "new"}` : `paused_${attemptId || "new"}`;
 
   return (
-    <div className="fixed inset-0 z-[999] bg-background">
-      <div className="h-full flex flex-col lg:flex-row gap-4">
-       {/* Instructions (required before start) */}
-       <Dialog
-         open={instructionsOpen && !isStarted}
-         onOpenChange={(v) => {
-           // Prevent closing until test is started
-           if (!isStarted) {
-             setInstructionsOpen(true);
-             return;
-           }
-           setInstructionsOpen(v);
-         }}
-       >
-         <DialogContent
-           className="rounded-2xl max-w-2xl"
-           onEscapeKeyDown={(e) => e.preventDefault()}
-           onPointerDownOutside={(e) => e.preventDefault()}
-         >
-           <DialogHeader>
-             <DialogTitle className="text-xl">Instructions</DialogTitle>
-             <DialogDescription>
-               Please read the following instructions carefully before starting the test.
-             </DialogDescription>
-           </DialogHeader>
+    <div className="fixed inset-0 z-[99999] bg-background flex flex-col lg:flex-row gap-4 p-4 overflow-hidden">
+      {/* Instructions Gate (must proceed to start) */}
+      {!isStarted && instructionsOpen && (
+        <div className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">CBT Instructions</p>
+                <h2 className="text-lg font-semibold text-gray-900">{testMeta?.title || "Test"}</h2>
+              </div>
+              <div className="text-xs font-medium text-gray-700 bg-gray-100 px-3 py-1 rounded-full">
+                Duration: {testMeta?.durationMinutes ?? 60} minutes
+              </div>
+            </div>
 
-           <div className="space-y-4 text-sm">
-             <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
-               <p className="font-medium">
-                 {testMeta?.title || "Test"} • {testMeta?.subject || "General"}
-               </p>
-               <p className="text-muted-foreground">
-                 Duration: <span className="font-semibold text-foreground">{testMeta?.durationMinutes ?? 60} minutes</span> •
-                 Questions: <span className="font-semibold text-foreground">{questions.length}</span>
-               </p>
-             </div>
+            <div className="p-6 space-y-4">
+              <ul className="space-y-3 text-sm text-gray-800">
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-6 w-6 rounded-md bg-gray-200 border border-gray-400" />
+                  <span>This is a computer-based test with a timer; it will auto-submit when time ends.</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-0 w-0 border-t-[12px] border-b-[12px] border-l-[18px] border-t-transparent border-b-transparent border-l-orange-500" />
+                  <span>The time duration for the test is {testMeta?.durationMinutes ?? 60} minutes.</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-0 w-0 border-t-[12px] border-b-[12px] border-l-[18px] border-t-transparent border-b-transparent border-l-green-500" />
+                  <span>Use <b>Save &amp; Next</b> to move forward and <b>Previous</b> to go back.</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-6 w-6 rounded-full bg-purple-600" />
+                  <span>You can change or clear your answer anytime before submission.</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-6 w-6 rounded-full bg-purple-600 relative">
+                    <span className="absolute -right-1 -bottom-1 h-4 w-4 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white">✓</span>
+                  </span>
+                  <span>Use <b>Mark for Review &amp; Next</b> to revisit questions later.</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="mt-0.5 h-6 w-6 rounded-md bg-gray-100 border border-gray-400 flex items-center justify-center text-[11px] font-semibold">
+                    1
+                  </span>
+                  <span>Check question status using the palette on the right.</span>
+                </li>
+              </ul>
 
-             <ul className="list-disc pl-5 space-y-2">
-               <li>This is a computer-based test with a timer; it will auto-submit when time ends.</li>
-               <li>The time duration for the test is <b>{testMeta?.durationMinutes ?? 60} minutes</b>.</li>
-               <li>Use <b>Save &amp; Next</b> to move forward and <b>Previous</b> to go back.</li>
-               <li>You can change or clear your answer anytime before submission.</li>
-               <li>Use <b>Mark for Review &amp; Next</b> to revisit questions later.</li>
-               <li>Check question status using the palette on the right.</li>
-             </ul>
+              <div className="pt-3 border-t space-y-3">
+                <label className="flex items-center gap-3 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={instructionsChecked}
+                    onChange={(e) => setInstructionsChecked(e.target.checked)}
+                  />
+                  <span>I have read and understood the instructions</span>
+                </label>
 
-             {/* Legend */}
-             <div className="rounded-xl border p-4">
-               <p className="font-semibold mb-3">Question Status Legend</p>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-muted-foreground">
-                 <div className="flex items-center gap-3">
-                   <span className="h-6 w-6 rounded-md border bg-muted" />
-                   <span>Not Visited</span>
-                 </div>
-                 <div className="flex items-center gap-3">
-                   <span className="h-0 w-0 border-y-[12px] border-y-transparent border-l-[18px] border-l-orange-500" />
-                   <span>Not Answered</span>
-                 </div>
-                 <div className="flex items-center gap-3">
-                   <span className="h-0 w-0 border-y-[12px] border-y-transparent border-l-[18px] border-l-green-600" />
-                   <span>Answered</span>
-                 </div>
-                 <div className="flex items-center gap-3">
-                   <span className="h-6 w-6 rounded-full bg-purple-600" />
-                   <span>Marked for Review</span>
-                 </div>
-                 <div className="flex items-center gap-3">
-                   <span className="relative h-6 w-6 rounded-full bg-purple-600">
-                     <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-green-600 ring-2 ring-background" />
-                   </span>
-                   <span>Answered &amp; Marked for Review (evaluated)</span>
-                 </div>
-               </div>
-             </div>
+                <div className="flex justify-end">
+                  <Button
+                    className={cn("rounded-xl px-8", !instructionsChecked && "opacity-60")}
+                    disabled={!instructionsChecked}
+                    onClick={async () => {
+                      try {
+                        await handleStart();
+                        setInstructionsOpen(false);
+                      } catch {
+                        // handleStart already toasts
+                      }
+                    }}
+                  >
+                    PROCEED
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-             <label className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer select-none">
-               <input
-                 type="checkbox"
-                 className="mt-0.5 h-4 w-4"
-                 checked={instructionsChecked}
-                 onChange={(e) => setInstructionsChecked(e.target.checked)}
-               />
-               <span>
-                 <span className="font-medium">I have read and understood the instructions</span>
-               </span>
-             </label>
-           </div>
-
-           <DialogFooter>
-             <Button
-               className="gradient-bg"
-               disabled={!instructionsChecked}
-               onClick={handleStart}
-             >
-               PROCEED
-             </Button>
-           </DialogFooter>
-         </DialogContent>
-       </Dialog>
-
-      {/* Main Content */}
+{/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between gap-4 p-4 bg-card rounded-xl mb-4">
@@ -752,7 +753,7 @@ export default function StudentCBTAttempt() {
             </div>
 
             {!isStarted && (
-              <Button size="sm" className="rounded-lg gradient-bg" onClick={() => setInstructionsOpen(true)}>
+              <Button size="sm" className="rounded-lg gradient-bg" onClick={handleStart}>
                 {attemptId ? "Resume" : "Start"}
               </Button>
             )}
@@ -920,6 +921,5 @@ export default function StudentCBTAttempt() {
         </DialogContent>
       </Dialog>
     </div>
-    </div>
-   );
+  );
 }
