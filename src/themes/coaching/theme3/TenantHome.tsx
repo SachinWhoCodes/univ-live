@@ -625,8 +625,8 @@ export default function TenantHomeTheme2() {
             <div>
               <div className="font-semibold text-white mb-6">Legal</div>
               <div className="space-y-4 text-sm text-neutral-400">
-                <a href="#" className="block hover:text-white transition-colors">Terms of Service</a>
-                <a href="#" className="block hover:text-white transition-colors">Privacy Policy</a>
+                  <Link to="/terms-of-use" className="block hover:text-white transition-colors">Terms of Service</Link>
+                  <Link to="/privacy-policy" className="block hover:text-white transition-colors">Privacy Policy</Link>
                 <a href="#" className="block hover:text-white transition-colors">Refund Policy</a>
               </div>
             </div>

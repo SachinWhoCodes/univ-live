@@ -19,6 +19,13 @@ import HowItWorks from "@/pages/HowItWorks";
 import Pricing from "@/pages/Pricing";
 import Contact from "@/pages/Contact";
 import Features from "@/pages/Features";
+import About from "@/pages/About";
+import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
+import TenantPrivacy from "@/pages/tenant/PrivacyPolicyTenant";
+import TenantTerms from "@/pages/tenant/TermsOfUseTenant";
+import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
 
 import AdminTestManager from "./pages/AdminTestManager";
 
@@ -72,6 +79,11 @@ export default function AppRoutes() {
           <Route path="/courses" element={<TenantCourses />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy-policy" element={<TenantPrivacy />} />
+          <Route path="/terms-of-use" element={<TenantTerms />} />
 
           {/* --- PROTECTED STUDENT ROUTES --- */}
           {/* We replace 'RequireRole' with 'StudentRoute' here */}

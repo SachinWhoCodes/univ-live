@@ -829,8 +829,8 @@ export default function TenantHomeTheme2() {
               © {new Date().getFullYear()} {coachingName}. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm font-medium text-zinc-500">
-              <a href="#" className="hover:text-zinc-950">Privacy Policy</a>
-              <a href="#" className="hover:text-zinc-950">Terms of Service</a>
+              <Link to="/privacy-policy" className="hover:text-zinc-950">Privacy Policy</Link>
+              <Link to="/terms-of-use" className="hover:text-zinc-950">Terms of Service</Link>
             </div>
           </div>
         </div>
