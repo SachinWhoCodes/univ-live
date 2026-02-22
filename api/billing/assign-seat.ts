@@ -4,21 +4,7 @@ import { requireUser } from "../_lib/requireUser.js";
 
 function isSubscriptionUsable(sub: any): boolean {
   const status = String(sub?.status || "").toLowerCase();
-  if (status === "active" || status === "authenticated") return true;
-
-  // trial: created is allowed only until startAt
-  if (status === "created") {
-    const startAt = sub?.startAt;
-    const startMs =
-      typeof startAt?.toMillis === "function"
-        ? startAt.toMillis()
-        : typeof startAt?.seconds === "number"
-        ? startAt.seconds * 1000
-        : null;
-
-    if (typeof startMs === "number" && Date.now() < startMs) return true;
-  }
-  return false;
+  return status === "active" || status === "authenticated";
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

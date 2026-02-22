@@ -24,8 +24,7 @@ import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
 import TenantPrivacy from "@/pages/tenant/PrivacyPolicyTenant";
 import TenantTerms from "@/pages/tenant/TermsOfUseTenant";
-import Privacy from "@/pages/Privacy";
-import Terms from "@/pages/Terms";
+
 
 import AdminTestManager from "./pages/AdminTestManager";
 
