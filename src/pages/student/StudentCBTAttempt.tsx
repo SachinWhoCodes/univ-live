@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimerChip } from "@/components/student/TimerChip";
 import { CBTQuestionPalette } from "@/components/student/CBTQuestionPalette";
@@ -890,36 +889,50 @@ export default function StudentCBTAttempt() {
       </Card>
 
       {/* Submit Dialog */}
-      <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
-        <DialogContent className="rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" /> Submit Test?
-            </DialogTitle>
-            <DialogDescription>Are you sure you want to submit? You won't be able to change your answers.</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-4 py-4 text-sm">
-            <div className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30">
-              <p className="font-semibold text-green-700 dark:text-green-400">{answeredCount}</p>
-              <p className="text-xs text-muted-foreground">Answered</p>
+  
+      {/* Submit Confirmation Overlay (high z-index; not using portal) */}
+      {submitDialogOpen && (
+        <div className="fixed inset-0 z-[100001] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-background border shadow-2xl overflow-hidden">
+            <div className="p-4 border-b flex items-start gap-3">
+              <div className="mt-0.5">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold">Submit Test?</p>
+                <p className="text-sm text-muted-foreground">
+                  Are you sure you want to submit? You won&apos;t be able to change your answers.
+                </p>
+              </div>
             </div>
-            <div className="p-3 rounded-xl bg-red-100 dark:bg-red-900/30">
-              <p className="font-semibold text-red-700 dark:text-red-400">{unansweredVisitedCount}</p>
-              <p className="text-xs text-muted-foreground">Unanswered</p>
+
+            <div className="p-4 grid grid-cols-2 gap-3 text-sm">
+              <div className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30">
+                <p className="font-semibold text-green-700 dark:text-green-400">{answeredCount}</p>
+                <p className="text-xs text-muted-foreground">Answered</p>
+              </div>
+              <div className="p-3 rounded-xl bg-red-100 dark:bg-red-900/30">
+                <p className="font-semibold text-red-700 dark:text-red-400">{unansweredVisitedCount}</p>
+                <p className="text-xs text-muted-foreground">Unanswered</p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setSubmitDialogOpen(false)} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button
+                className="rounded-xl gradient-bg"
+                onClick={() => handleSubmit(false)}
+                disabled={!isStarted || saving}
+              >
+                {saving ? "Submitting..." : "Submit Test"}
+              </Button>
             </div>
           </div>
+        </div>
+      )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSubmitDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button className="gradient-bg" onClick={() => handleSubmit(false)} disabled={!isStarted}>
-              Submit Test
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
