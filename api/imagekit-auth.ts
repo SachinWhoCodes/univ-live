@@ -35,33 +35,42 @@ function setCors(req: VercelRequest, res: VercelResponse) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCors(req, res);
+  try {
+    setCors(req, res);
 
-  if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+    if (req.method === "OPTIONS") return res.status(204).end();
+    if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  if (
-    !process.env.IMAGEKIT_PUBLIC_KEY ||
-    !process.env.IMAGEKIT_PRIVATE_KEY ||
-    !process.env.IMAGEKIT_URL_ENDPOINT
-  ) {
-    return res.status(500).json({ error: "ImageKit env not configured" });
+    if (
+      !process.env.IMAGEKIT_PUBLIC_KEY ||
+      !process.env.IMAGEKIT_PRIVATE_KEY ||
+      !process.env.IMAGEKIT_URL_ENDPOINT
+    ) {
+      return res.status(500).json({ error: "ImageKit env not configured" });
+    }
+
+    // ✅ scope controls who can request signature
+    // - question-bank => ADMIN only (default for safety)
+    // - website       => ADMIN + EDUCATOR
+    const scope = String((req.query?.scope as string) || "question-bank").toLowerCase();
+
+    if (scope === "website") {
+      await requireUser(req, { roles: ["ADMIN", "EDUCATOR"] });
+    } else {
+      await requireUser(req, { roles: ["ADMIN"] });
+    }
+
+    const authParams = imagekit.getAuthenticationParameters();
+    return res.status(200).json(authParams);
+  } catch (e: any) {
+    const msg = String(e?.message || "Error");
+    if (msg.includes("Missing Authorization token")) {
+      return res.status(401).json({ error: "Missing Authorization token" });
+    }
+    if (msg === "Forbidden") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    console.error("imagekit-auth error:", e);
+    return res.status(500).json({ error: msg });
   }
-
-  // ✅ Use scope to control who can request signature
-  // scope=question-bank  -> ADMIN only (default)
-  // scope=website        -> ADMIN + EDUCATOR
-  // scope=generic        -> any logged-in user (optional)
-  const scope = String((req.query?.scope as string) || "question-bank").toLowerCase();
-
-  if (scope === "question-bank") {
-    await requireUser(req, { roles: ["ADMIN"] });
-  } else if (scope === "website") {
-    await requireUser(req, { roles: ["ADMIN", "EDUCATOR"] });
-  } else {
-    await requireUser(req); // any authenticated user
-  }
-
-  const authParams = imagekit.getAuthenticationParameters();
-  return res.status(200).json(authParams);
 }
