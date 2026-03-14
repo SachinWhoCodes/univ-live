@@ -115,7 +115,7 @@ export function HeroSection() {
             
             <div className="relative aspect-video bg-gradient-to-br from-primary/5 to-accent/5 rounded-3xl overflow-hidden border-2 border-border shadow-elevated group">
               <iframe
-                src="https://www.youtube.com/embed/FNgg3V6zI9I"
+                src="https://www.youtube.com/embed/KdVzlfhzDpc"
                 title="Univ.live Demo"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
