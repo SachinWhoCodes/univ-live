@@ -65,13 +65,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
+      setLoading(true);
       setFirebaseUser(u);
+      setProfile(null);
+
       if (!u) {
-        setProfile(null);
         setLoading(false);
         return;
       }
-      setLoading(true);
+
       try {
         const p = await loadProfile(u.uid);
         setProfile(p);
@@ -79,8 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
+
     return () => unsub();
   }, []);
+
 
   const value = useMemo<AuthContextValue>(() => {
     return {

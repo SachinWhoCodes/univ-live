@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useTenant } from "@/contexts/TenantProvider";
+import { useAuth } from "@/contexts/AuthProvider";
+
 
 type RoleUI = "student" | "educator";
 
@@ -16,6 +18,9 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const nav = useNavigate();
   const { isTenantDomain, tenantSlug, loading: tenantLoading } = useTenant();
+  const { firebaseUser, profile, loading: authLoading } = useAuth();
+
+
 
   const roleParam = (searchParams.get("role") || "").toLowerCase();
   const initialRole: RoleUI = roleParam === "educator" ? "educator" : "student";
@@ -25,6 +30,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pendingRedirect, setPendingRedirect] = useState<"/student" | "/educator" | null>(null);
 
   const effectiveRole: RoleUI = isTenantDomain ? "student" : role;
 
@@ -51,6 +57,27 @@ export default function Login() {
       body: JSON.stringify({ tenantSlug }),
     });
   }
+
+
+  useEffect(() => {
+    if (!pendingRedirect) return;
+    if (authLoading) return;
+    if (!firebaseUser) return;
+
+    const roleDb = String(profile?.role || "").toUpperCase();
+
+    if (pendingRedirect === "/educator" && (roleDb === "EDUCATOR" || roleDb === "ADMIN")) {
+      nav("/educator", { replace: true });
+      setPendingRedirect(null);
+      return;
+    }
+
+    if (pendingRedirect === "/student" && roleDb === "STUDENT") {
+      nav("/student", { replace: true });
+      setPendingRedirect(null);
+    }
+  }, [pendingRedirect, authLoading, firebaseUser, profile, nav]);
+
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,8 +120,9 @@ export default function Login() {
         const token = await cred.user.getIdToken();
         await registerStudent(token).catch(() => {});
         toast.success("Welcome back!");
-        nav("/student");
+        setPendingRedirect("/student");
         return;
+
       }
 
       // ---- main domain: educators only (students must use coaching URL) ----
@@ -118,9 +146,8 @@ export default function Login() {
       }
 
       toast.success("Logged in!");
-
-      // ✅ Keep educator on main domain - TenantProvider will use their tenantSlug from profile
-      nav("/educator");
+      setPendingRedirect("/educator");
+      return;
     } catch (error: any) {
       console.error(error);
       let msg = "Failed to login";
@@ -232,10 +259,15 @@ export default function Login() {
               </div>
 
               <Button
-                disabled={loading}
+                disabled={loading || authLoading || !!pendingRedirect}
                 className="w-full h-11 text-base bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-colors"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
+                {loading || authLoading || pendingRedirect ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Continue"
+                )}
+
               </Button>
             </form>
 
