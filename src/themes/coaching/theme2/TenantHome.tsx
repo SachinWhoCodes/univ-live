@@ -206,16 +206,42 @@ export default function TenantHomeTheme2() {
     website: Globe,
     telegram: Send,
     whatsapp: MessageCircle,
+    email: Mail,
+    phone: Phone,
+  };
+
+
+  const socialLabelMap: Record<string, string> = {
+    instagram: "Instagram",
+    youtube: "YouTube",
+    facebook: "Facebook",
+    linkedin: "LinkedIn",
+    twitter: "X",
+    website: "Website",
+    telegram: "Telegram",
+    whatsapp: "WhatsApp",
+    email: "Email",
+    phone: "Phone",
+  };
+
+  const buildSocialHref = (key: string, value: string) => {
+    if (key === "email") {
+      return value.startsWith("mailto:") ? value : `mailto:${value}`;
+    }
+    if (key === "phone") {
+      return value.startsWith("tel:") ? value : `tel:${value}`;
+    }
+    return value;
   };
 
   // CUET Mock Data for "Our Tests"
   const cuetSubjects = [
-    { title: "English", totalTests: 440, freeTests: 6, lang: "English", attempts: "97341" },
-    { title: "Economics", totalTests: 231, freeTests: 5, lang: "English, हिन्दी", attempts: "47695" },
-    { title: "Business Studies", totalTests: 214, freeTests: 5, lang: "English, हिन्दी", attempts: "38535" },
-    { title: "General Test", totalTests: 520, freeTests: 10, lang: "English, हिन्दी", attempts: "125430" },
+    { title: "English", totalTests: 440, freeTests: 1, lang: "English", attempts: "97341" },
+    { title: "Economics", totalTests: 231, freeTests: 5, lang: "English", attempts: "47695" },
+    { title: "Business Studies", totalTests: 214, freeTests: 5, lang: "English", attempts: "38535" },
+    { title: "General Test", totalTests: 520, freeTests: 10, lang: "English", attempts: "125430" },
     { title: "Mathematics", totalTests: 310, freeTests: 4, lang: "English", attempts: "65200" },
-    { title: "Physics", totalTests: 280, freeTests: 4, lang: "English, हिन्दी", attempts: "54120" },
+    { title: "Physics", totalTests: 280, freeTests: 4, lang: "English", attempts: "54120" },
   ];
 
   return (
@@ -500,7 +526,7 @@ export default function TenantHomeTheme2() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-zinc-500">{subject.totalTests} Total Tests</span>
                     <span className="bg-green-600 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm relative after:content-[''] after:absolute after:right-[-6px] after:top-0 after:border-t-[8px] after:border-b-[8px] after:border-l-[6px] after:border-t-transparent after:border-b-transparent after:border-l-green-600">
-                      {subject.freeTests} Free Test(s)
+                      Expert-Curated Test(s)
                     </span>
                   </div>
                 </div>
@@ -509,9 +535,7 @@ export default function TenantHomeTheme2() {
                   <div className="bg-[#FAFAFA] border border-zinc-200 text-zinc-600 text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5">
                     <FileText className="h-3 w-3" /> {subject.lang}
                   </div>
-                  <div className="bg-[#FAFAFA] border border-zinc-200 text-zinc-600 text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                    <Users className="h-3 w-3" /> {subject.attempts} attempted
-                  </div>
+                  
                 </div>
               </motion.div>
             ))}
@@ -599,17 +623,7 @@ export default function TenantHomeTheme2() {
                   Have questions about the test series or need guidance on your preparation? Reach out directly.
                 </p>
 
-                {tenant.contact?.email && (
-                  <a href={`mailto:${tenant.contact.email}`} className="group inline-flex items-center gap-4 bg-[#FAFAFA] border border-zinc-200 p-4 pr-6 rounded-full hover:bg-zinc-50 transition-colors mb-8">
-                    <div className="h-12 w-12 bg-white rounded-full flex items-center justify-center shadow-sm border border-zinc-100 group-hover:scale-110 transition-transform">
-                      <Mail className="h-5 w-5 text-zinc-900" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-0.5">Email Us</p>
-                      <p className="font-semibold text-zinc-950">{tenant.contact.email}</p>
-                    </div>
-                  </a>
-                )}
+                
              </div>
 
              <div className="bg-[#FAFAFA] border border-zinc-200 rounded-[2.5rem] p-8 sm:p-12">
@@ -618,16 +632,30 @@ export default function TenantHomeTheme2() {
                   {Object.entries(socials).length > 0 ? (
                     Object.entries(socials).map(([k, v]) => {
                       const Icon = socialIconMap[k];
-                      if (!Icon) return null;
+                      if (!Icon || !v) return null;
+
+                      const href = buildSocialHref(k, v);
+                      const isExternal = !["email", "phone"].includes(k);
+
                       return (
-                        <a key={k} href={v} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center gap-3 bg-white border border-zinc-100 p-6 rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all">
+                        <a
+                          key={k}
+                          href={href}
+                          target={isExternal ? "_blank" : undefined}
+                          rel={isExternal ? "noopener noreferrer" : undefined}
+                          className="flex flex-col items-center justify-center gap-3 bg-white border border-zinc-100 p-6 rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all"
+                        >
                           <Icon className="h-8 w-8 text-zinc-700" />
-                          <span className="text-sm font-semibold text-zinc-900 capitalize">{k}</span>
+                          <span className="text-sm font-semibold text-zinc-900">
+                            {socialLabelMap[k] || k}
+                          </span>
                         </a>
                       );
                     })
                   ) : (
-                    <div className="col-span-full text-zinc-500 text-sm">Social links will appear here once added in settings.</div>
+                    <div className="col-span-full text-zinc-500 text-sm">
+                      Social links will appear here once added in settings.
+                    </div>
                   )}
                 </div>
              </div>
@@ -736,9 +764,7 @@ export default function TenantHomeTheme2() {
                  Built on UNIV.LIVE to help educators scale their testing and reach.
                </p>
                <div className="inline-flex items-center justify-center rounded-full bg-zinc-100 px-3 py-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
-                  Made with <Star className="h-3 w-3 fill-zinc-600" />
-                </span>
+              
               </div>
             </div>
           </div>

@@ -77,7 +77,7 @@ export function HeroSection() {
             </motion.div>
 
             {/* Google Rating */}
-            <motion.div
+            {/* <motion.div
               className="flex items-center gap-4 p-4 bg-card rounded-2xl border border-border shadow-soft inline-flex"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -99,7 +99,7 @@ export function HeroSection() {
                 </svg>
                 <span className="font-semibold text-foreground">Google</span>
               </div>
-            </motion.div>
+            </motion.div> */}
           </motion.div>
 
           {/* Right - YouTube Video */}

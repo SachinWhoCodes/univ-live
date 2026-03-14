@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
 import univLogo from "@/assets/univ-logo-1.png";
+import { useAuth } from "@/contexts/AuthProvider";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/educator/dashboard" },
@@ -53,6 +54,18 @@ export default function EducatorLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const { theme, setTheme } = useTheme();
+
+  const { firebaseUser, profile } = useAuth();
+
+  const educatorName =
+    profile?.displayName ||
+    firebaseUser?.displayName ||
+    "Educator";
+
+  const educatorEmail =
+    profile?.email ||
+    firebaseUser?.email ||
+    "No email";
 
   const isActive = (href: string) => location.pathname === href;
 
@@ -186,15 +199,15 @@ export default function EducatorLayout() {
                     <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=educator" />
                     <AvatarFallback>ED</AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:block text-sm font-medium">Dr. Sharma</span>
+                  <span className="hidden sm:block text-sm font-medium">{educatorName}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>
                   <div className="flex flex-col">
-                    <span>Dr. Sharma</span>
+                    <span>{educatorName}</span>
                     <span className="text-xs font-normal text-muted-foreground">
-                      sharma@coaching.com
+                      {educatorName}
                     </span>
                   </div>
                 </DropdownMenuLabel>

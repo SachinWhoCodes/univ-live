@@ -83,14 +83,34 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
         const data: any = eduSnap.exists() ? eduSnap.data() : {};
 
+        const websiteConfig = data?.websiteConfig || {};
+
         setTenant({
           educatorId,
           tenantSlug,
-          coachingName: data?.coachingName,
-          tagline: data?.tagline,
-          contact: data?.contact,
-          socials: data?.socials,
-          websiteConfig: data?.websiteConfig,
+          coachingName: websiteConfig?.coachingName || data?.coachingName,
+          tagline: websiteConfig?.tagline || data?.tagline,
+          contact: {
+            phone:
+              websiteConfig?.contact?.phone ||
+              websiteConfig?.socials?.phone ||
+              data?.contact?.phone ||
+              data?.phone ||
+              "",
+            email:
+              websiteConfig?.contact?.email ||
+              websiteConfig?.socials?.email ||
+              data?.contact?.email ||
+              data?.email ||
+              "",
+            address:
+              websiteConfig?.contact?.address ||
+              data?.contact?.address ||
+              data?.address ||
+              "",
+          },
+          socials: websiteConfig?.socials || data?.socials,
+          websiteConfig,
         });
       } finally {
         if (alive) setLoading(false);

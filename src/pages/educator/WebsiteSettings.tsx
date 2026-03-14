@@ -22,7 +22,9 @@ import {
   Linkedin,
   Twitter,
   Facebook,
-  Globe
+  Globe,
+  Mail,
+  Phone
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -77,6 +79,8 @@ type SocialLinks = {
   linkedin?: string;
   twitter?: string;
   facebook?: string;
+  email?: string;
+  phone?: string;
 };
 
 // New Type for Featured Tests
@@ -316,6 +320,8 @@ export default function WebsiteSettings() {
           linkedin: socials.linkedin || "",
           twitter: socials.twitter || "",
           facebook: socials.facebook || "",
+          email: socials.email || "",
+          phone: socials.phone || "",
         },
         stats,
         achievements,
@@ -591,7 +597,7 @@ export default function WebsiteSettings() {
              </CardHeader>
              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Logo Image URL</Label>
+                  <Label>Logo Image URL (Suggested dimentions: 512*512)</Label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       value={logoUrl}
@@ -653,7 +659,7 @@ export default function WebsiteSettings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Hero Image URL</Label>
+                  <Label>Hero Image URL (Suggested dimentions: 1080*1080)</Label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input 
                       value={heroImage} 
@@ -707,6 +713,30 @@ export default function WebsiteSettings() {
              </CardHeader>
              <CardContent className="space-y-4">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Mail className="h-4 w-4" /> Email
+                    </Label>
+                    <Input
+                      type="email"
+                      value={socials.email || ""}
+                      onChange={(e) => setSocials((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="support@yourcoaching.com"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Phone className="h-4 w-4" /> Phone
+                    </Label>
+                    <Input
+                      value={socials.phone || ""}
+                      onChange={(e) => setSocials((p) => ({ ...p, phone: e.target.value }))}
+                      placeholder="+91 9876543210"
+                    />
+                  </div>
+
                  <div className="space-y-2">
                    <Label className="flex items-center gap-2"><Globe className="h-4 w-4" /> Website</Label>
                    <Input
