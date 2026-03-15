@@ -101,7 +101,7 @@ export default async function handler(
         Authorization: `Bearer ${groqApiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.1-8b-instant", // Free tier: fastest/cheapest (560 T/sec, $0.05 input / $0.08 output)
+        model: "meta-llama/llama-4-scout-17b-16e-instruct", // Free tier: fastest/cheapest (560 T/sec, $0.05 input / $0.08 output)
         messages: [
           {
             role: "system",
