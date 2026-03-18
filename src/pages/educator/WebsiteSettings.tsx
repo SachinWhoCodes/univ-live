@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import {
   Save,
   Loader2,
@@ -136,7 +136,20 @@ export default function WebsiteSettings() {
   const [availableTests, setAvailableTests] = useState<AvailableTest[]>([]); 
   const [featuredTestIds, setFeaturedTestIds] = useState<string[]>([]); 
 
+  const [theme2SelectedSubjects, setTheme2SelectedSubjects] = useState<string[]>([]);
+
   const {tenant} = useTenant();
+
+
+  const availableSubjects = useMemo(() => {
+    return Array.from(
+      new Set(
+        availableTests
+          .map((test) => String(test.subject || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [availableTests]);
 
   // --- AI Generation Function ---
   const handleGenerateWithAI = async () => {
@@ -227,6 +240,10 @@ export default function WebsiteSettings() {
           
           // Load Featured Tests selection
           setFeaturedTestIds(data.featuredTestIds || []);
+
+          setTheme2SelectedSubjects(
+            Array.isArray(data.theme2SelectedSubjects) ? data.theme2SelectedSubjects : []
+          );
         }
 
         // B. Fetch Educator's Tests (To display in the selection list)
@@ -328,6 +345,7 @@ export default function WebsiteSettings() {
         faculty,
         testimonials,
         featuredTestIds, // Includes the new selection
+        theme2SelectedSubjects,
         updatedAt: new Date()
       };
 
@@ -364,6 +382,15 @@ export default function WebsiteSettings() {
       prev.includes(testId) 
         ? prev.filter(id => id !== testId) // Remove if already selected
         : [...prev, testId] // Add if not selected
+    );
+  };
+
+
+  const toggleTheme2Subject = (subject: string) => {
+    setTheme2SelectedSubjects((prev) =>
+      prev.includes(subject)
+        ? prev.filter((s) => s !== subject)
+        : [...prev, subject]
     );
   };
 
@@ -850,6 +877,81 @@ export default function WebsiteSettings() {
                     )
                   })}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Theme 2 Subject Visibility</CardTitle>
+              <CardDescription>
+                Select which subjects should appear in the “Our Tests” section of Theme 2.
+                <span className="block mt-1 text-xs text-muted-foreground">
+                  If you leave this empty, Theme 2 can fall back to showing top subjects automatically.
+                </span>
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent>
+              {availableSubjects.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  No subjects found yet. Create tests with subject names first, then they will appear here.
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTheme2SelectedSubjects(availableSubjects)}
+                    >
+                      Select all
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTheme2SelectedSubjects([])}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {availableSubjects.map((subject) => {
+                      const isSelected = theme2SelectedSubjects.includes(subject);
+
+                      return (
+                        <button
+                          key={subject}
+                          type="button"
+                          onClick={() => toggleTheme2Subject(subject)}
+                          className={`
+                            w-full text-left cursor-pointer flex items-center gap-3 p-4 rounded-lg border transition-all
+                            ${isSelected
+                              ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                              : "border-border hover:bg-muted/50"}
+                          `}
+                        >
+                          <div className={isSelected ? "text-primary" : "text-muted-foreground"}>
+                            {isSelected ? (
+                              <CheckSquare className="h-5 w-5" />
+                            ) : (
+                              <Square className="h-5 w-5" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{subject}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

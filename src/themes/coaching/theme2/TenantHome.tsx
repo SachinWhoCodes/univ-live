@@ -59,6 +59,13 @@ type TestSeries = {
   durationMinutes?: number;
 };
 
+
+type SubjectCard = {
+  title: string;
+  totalTests: number;
+  freeTests: number;
+};
+
 function initials(name: string) {
   return (name || "U")
     .split(" ")
@@ -78,6 +85,9 @@ export default function TenantHomeTheme2() {
 
   const [featured, setFeatured] = useState<TestSeries[]>([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
+
+  const [subjectCards, setSubjectCards] = useState<SubjectCard[]>([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(true);
 
   if (loading) {
     return (
@@ -102,6 +112,13 @@ export default function TenantHomeTheme2() {
   }
 
   const config = tenant.websiteConfig || {};
+
+
+  const selectedTheme2Subjects: string[] = Array.isArray(config.theme2SelectedSubjects)
+    ? config.theme2SelectedSubjects
+    : [];
+
+  const selectedTheme2SubjectsKey = selectedTheme2Subjects.join("|");
 
   const coachingName = config.coachingName || tenant.coachingName || "Your Institute";
   const tagline = config.tagline || tenant.tagline || "Learn smarter. Score higher.";
@@ -189,6 +206,72 @@ export default function TenantHomeTheme2() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [educatorId, featuredKey]);
 
+
+  useEffect(() => {
+      if (!educatorId) return;
+
+      async function loadSubjectCards() {
+        setLoadingSubjects(true);
+
+        try {
+          const snap = await getDocs(
+            collection(db, "educators", educatorId, "my_tests")
+          );
+
+          const map = new Map<string, SubjectCard>();
+
+          snap.docs.forEach((docSnap) => {
+            const row = docSnap.data() as any;
+            const subject = String(row?.subject || "").trim() || "General Test";
+
+            const current = map.get(subject) || {
+              title: subject,
+              totalTests: 0,
+              freeTests: 0,
+            };
+
+            current.totalTests += 1;
+
+            const price = row?.price;
+            const isFree =
+              price === "Included" ||
+              price === "Free" ||
+              price === 0 ||
+              price === "0" ||
+              price === null ||
+              price === undefined;
+
+            if (isFree) current.freeTests += 1;
+
+            map.set(subject, current);
+          });
+
+          let rows = Array.from(map.values()).sort((a, b) => b.totalTests - a.totalTests);
+
+          if (selectedTheme2Subjects.length > 0) {
+            rows = rows
+              .filter((item) => selectedTheme2Subjects.includes(item.title))
+              .sort(
+                (a, b) =>
+                  selectedTheme2Subjects.indexOf(a.title) -
+                  selectedTheme2Subjects.indexOf(b.title)
+              );
+          } else {
+            rows = rows.slice(0, 6);
+          }
+
+          setSubjectCards(rows);
+        } catch (error) {
+          console.error("Failed to load Theme 2 subjects:", error);
+          setSubjectCards([]);
+        } finally {
+          setLoadingSubjects(false);
+        }
+      }
+
+      loadSubjectCards();
+    }, [educatorId, selectedTheme2SubjectsKey]);
+
   // Updated Navigation
   const navLinks = [
     { label: "Home", href: "#top" },
@@ -235,14 +318,14 @@ export default function TenantHomeTheme2() {
   };
 
   // CUET Mock Data for "Our Tests"
-  const cuetSubjects = [
-    { title: "English", totalTests: 440, freeTests: 1, lang: "English", attempts: "97341" },
-    { title: "Economics", totalTests: 231, freeTests: 5, lang: "English", attempts: "47695" },
-    { title: "Business Studies", totalTests: 214, freeTests: 5, lang: "English", attempts: "38535" },
-    { title: "General Test", totalTests: 520, freeTests: 10, lang: "English", attempts: "125430" },
-    { title: "Mathematics", totalTests: 310, freeTests: 4, lang: "English", attempts: "65200" },
-    { title: "Physics", totalTests: 280, freeTests: 4, lang: "English", attempts: "54120" },
-  ];
+  // const cuetSubjects = [
+  //   { title: "English", totalTests: 440, freeTests: 1, lang: "English", attempts: "97341" },
+  //   { title: "Economics", totalTests: 231, freeTests: 5, lang: "English", attempts: "47695" },
+  //   { title: "Business Studies", totalTests: 214, freeTests: 5, lang: "English", attempts: "38535" },
+  //   { title: "General Test", totalTests: 520, freeTests: 10, lang: "English", attempts: "125430" },
+  //   { title: "Mathematics", totalTests: 310, freeTests: 4, lang: "English", attempts: "65200" },
+  //   { title: "Physics", totalTests: 280, freeTests: 4, lang: "English", attempts: "54120" },
+  // ];
 
   return (
     <div id="top" className="min-h-screen bg-[#FAFAFA] text-zinc-900 selection:bg-indigo-100 selection:text-indigo-900" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -507,7 +590,7 @@ export default function TenantHomeTheme2() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {cuetSubjects.map((subject, idx) => (
+            {subjectCards.map((subject, idx) => (
               <motion.div
                 key={idx}
                 initial={{ opacity: 0, y: 15 }}
@@ -533,7 +616,7 @@ export default function TenantHomeTheme2() {
 
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <div className="bg-[#FAFAFA] border border-zinc-200 text-zinc-600 text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                    <FileText className="h-3 w-3" /> {subject.lang}
+                    <FileText className="h-3 w-3" /> English
                   </div>
                   
                 </div>
