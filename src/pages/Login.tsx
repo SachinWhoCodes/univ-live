@@ -228,7 +228,7 @@ export default function Login() {
             {/* role is set via useEffect; avoid state changes during render */}
 
             {/* Dummy Google Login */}
-            <Button
+            {/* <Button
               type="button"
               variant="outline"
               className="w-full h-11 bg-background"
@@ -253,7 +253,7 @@ export default function Login() {
                 />
               </svg>
               Sign in with Google
-            </Button>
+            </Button> */}
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -261,7 +261,7 @@ export default function Login() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background px-2 text-muted-foreground">
-                  Or continue with email
+                  Continue with email
                 </span>
               </div>
             </div>

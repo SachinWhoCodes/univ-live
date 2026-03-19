@@ -63,6 +63,9 @@ function normalizeDifficulty(v: any): Difficulty {
 }
 
 const SUBJECTS = [
+  "Accountancy",
+  "Business Studies",
+  "Applied Mathematics",
   "General Test",
   "English",
   "Mathematics",

@@ -248,7 +248,7 @@ export default function Signup() {
             )}
 
             {/* Dummy Google Signup */}
-            <Button
+            {/* <Button
               type="button"
               variant="outline"
               className="w-full h-11 bg-background"
@@ -273,7 +273,7 @@ export default function Signup() {
                 />
               </svg>
               Sign up with Google
-            </Button>
+            </Button> */}
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -281,7 +281,7 @@ export default function Signup() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background px-2 text-muted-foreground">
-                  Or register with email
+                  Register with email
                 </span>
               </div>
             </div>
