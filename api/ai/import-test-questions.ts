@@ -26,47 +26,37 @@ type ModelResponse = {
   }>;
 };
 
+type CandidateBlock = { sourceIndex: number; rawBlock: string };
+
+const MAX_SEGMENTS = 120;
+const MAX_BLOCK_CHARS = 900;
+const MAX_SINGLE_BLOCK_RETRY_CHARS = 550;
+const MAX_BATCH_CHARS = 1800;
+const MAX_BATCH_ITEMS = 3;
+const GROQ_MAX_OUTPUT_TOKENS = 850;
+
 function buildSystemPrompt() {
-  return `You extract MCQ questions from educational PDF text.
-
-Return ONLY valid JSON in this format:
-{
-  "items": [
-    {
-      "sourceIndex": 1,
-      "status": "ready|partial|rejected",
-      "question": "string",
-      "options": ["string"],
-      "correctOption": 0,
-      "reasons": ["string"],
-      "rawBlock": "string"
-    }
-  ]
+  return [
+    "Extract single-correct MCQ data from text blocks.",
+    "Return ONLY JSON: {\"items\":[{\"sourceIndex\":1,\"status\":\"ready|partial|rejected\",\"question\":\"\",\"options\":[\"\"],\"correctOption\":0,\"reasons\":[\"\"],\"rawBlock\":\"\"}]}",
+    "A ready item must have question, 2-4 options, and zero-based correctOption.",
+    "If answer is unclear, use partial and correctOption null.",
+    "If unusable, use rejected.",
+    "Do not invent missing content.",
+    "Keep rawBlock very short."
+  ].join(" ");
 }
 
-Rules:
-- We only support single-correct MCQ questions.
-- Mandatory fields for a ready question are: question, options, correctOption.
-- options must be an array with 2 to 4 options only.
-- correctOption must be zero-based.
-- If the correct answer is not clear, set status to partial and correctOption to null.
-- If the block is unusable, set status to rejected.
-- Do not invent facts that are not present in the text.
-- Preserve the option order from the source block.
-- Keep rawBlock short but useful.`;
+function buildUserPrompt(batch: CandidateBlock[], context: { testTitle?: string; subject?: string }) {
+  return JSON.stringify({
+    testTitle: context.testTitle || "Unknown",
+    subject: context.subject || "Unknown",
+    task: "Extract MCQs from candidate blocks. Use answer hints like Ans: B or Correct option: 2 when present.",
+    items: batch,
+  });
 }
 
-function buildUserPrompt(batch: Array<{ sourceIndex: number; rawBlock: string }>, context: { testTitle?: string; subject?: string }) {
-  return `Test title: ${context.testTitle || "Unknown"}
-Subject: ${context.subject || "Unknown"}
-
-Extract MCQ questions from these candidate blocks. Some blocks may contain answer keys like "Ans: B" or "Correct option: 2". Use those clues when available.
-
-Candidate blocks:
-${JSON.stringify(batch, null, 2)}`;
-}
-
-async function callGroq(apiKey: string, batch: Array<{ sourceIndex: number; rawBlock: string }>, context: { testTitle?: string; subject?: string }) {
+async function groqRequest(apiKey: string, batch: CandidateBlock[], context: { testTitle?: string; subject?: string }) {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -80,7 +70,8 @@ async function callGroq(apiKey: string, batch: Array<{ sourceIndex: number; rawB
         { role: "user", content: buildUserPrompt(batch, context) },
       ],
       temperature: 0.1,
-      max_tokens: 2200,
+      max_tokens: GROQ_MAX_OUTPUT_TOKENS,
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -92,8 +83,54 @@ async function callGroq(apiKey: string, batch: Array<{ sourceIndex: number; rawB
   const json = await response.json();
   const content = json?.choices?.[0]?.message?.content;
   if (!content) throw new Error("No content returned from Groq API");
-
   return parseJsonResponse<ModelResponse>(content);
+}
+
+function isTooLargeError(error: unknown) {
+  const message = String(error || "");
+  return /Request too large|tokens per minute|rate_limit_exceeded/i.test(message);
+}
+
+async function callGroqAdaptive(apiKey: string, batch: CandidateBlock[], context: { testTitle?: string; subject?: string }): Promise<ModelResponse> {
+  try {
+    return await groqRequest(apiKey, batch, context);
+  } catch (error) {
+    if (!isTooLargeError(error)) throw error;
+
+    if (batch.length > 1) {
+      const mid = Math.ceil(batch.length / 2);
+      const left = await callGroqAdaptive(apiKey, batch.slice(0, mid), context);
+      const right = await callGroqAdaptive(apiKey, batch.slice(mid), context);
+      return { items: [...(left.items || []), ...(right.items || [])] };
+    }
+
+    const only = batch[0];
+    if (!only) throw error;
+    if (only.rawBlock.length <= MAX_SINGLE_BLOCK_RETRY_CHARS) throw error;
+
+    const trimmedBatch = [{ ...only, rawBlock: only.rawBlock.slice(0, MAX_SINGLE_BLOCK_RETRY_CHARS) }];
+    return await groqRequest(apiKey, trimmedBatch, context);
+  }
+}
+
+function buildBatches(segments: CandidateBlock[]) {
+  const batches: CandidateBlock[][] = [];
+  let current: CandidateBlock[] = [];
+  let currentChars = 0;
+
+  for (const segment of segments) {
+    const segChars = segment.rawBlock.length;
+    if (current.length && (current.length >= MAX_BATCH_ITEMS || currentChars + segChars > MAX_BATCH_CHARS)) {
+      batches.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(segment);
+    currentChars += segChars;
+  }
+
+  if (current.length) batches.push(current);
+  return batches;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -128,9 +165,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const segments = segmentQuestionCandidates(text)
-      .map((segment, index) => ({ sourceIndex: index + 1, rawBlock: segment.slice(0, 2400) }))
+      .map((segment, index) => ({ sourceIndex: index + 1, rawBlock: segment.slice(0, MAX_BLOCK_CHARS) }))
       .filter((segment) => segment.rawBlock.trim().length >= 15)
-      .slice(0, 120);
+      .slice(0, MAX_SEGMENTS);
 
     if (!segments.length) {
       return res.status(200).json({
@@ -140,11 +177,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const batches = buildBatches(segments);
     const results: ImportedQuestionItem[] = [];
-    const batchSize = 8;
-    for (let i = 0; i < segments.length; i += batchSize) {
-      const batch = segments.slice(i, i + batchSize);
-      const parsed = await callGroq(groqApiKey, batch, { testTitle, subject });
+
+    for (const batch of batches) {
+      const parsed = await callGroqAdaptive(groqApiKey, batch, { testTitle, subject });
       const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
 
       if (!rawItems.length) {
@@ -205,6 +242,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fileName,
         extractedChars: text.length,
         segmentCount: segments.length,
+        batchCount: batches.length,
         diagnostics,
       },
     });
