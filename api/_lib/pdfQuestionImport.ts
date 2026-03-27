@@ -71,14 +71,89 @@ function extractTextFromContent(content: string) {
 
 function tryInflate(buffer: Buffer) {
   try {
-    return inflateSync(buffer).toString("latin1");
+    return inflateSync(buffer);
   } catch {
     try {
-      return inflateRawSync(buffer).toString("latin1");
+      return inflateRawSync(buffer);
     } catch {
       return null;
     }
   }
+}
+
+function decodeAscii85ToBuffer(input: string) {
+  const trimmed = input.trim();
+  const start = trimmed.indexOf("<~");
+  const end = trimmed.indexOf("~>");
+  const raw = (start >= 0 ? trimmed.slice(start + 2, end >= 0 ? end : undefined) : trimmed)
+    .replace(/\s+/g, "")
+    .replace(/~>.*/, "");
+
+  const bytes: number[] = [];
+  let group: number[] = [];
+
+  for (const ch of raw) {
+    if (ch === "z" && group.length === 0) {
+      bytes.push(0, 0, 0, 0);
+      continue;
+    }
+
+    const code = ch.charCodeAt(0);
+    if (code < 33 || code > 117) continue;
+    group.push(code - 33);
+
+    if (group.length === 5) {
+      let value = 0;
+      for (const digit of group) value = value * 85 + digit;
+      bytes.push((value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255);
+      group = [];
+    }
+  }
+
+  if (group.length) {
+    const padding = 5 - group.length;
+    while (group.length < 5) group.push(84);
+    let value = 0;
+    for (const digit of group) value = value * 85 + digit;
+    const chunk = [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255];
+    bytes.push(...chunk.slice(0, 4 - padding));
+  }
+
+  return Buffer.from(bytes);
+}
+
+function parseFilters(headerWindow: string) {
+  const arrayMatch = headerWindow.match(/\/Filter\s*\[([^\]]+)\]/);
+  if (arrayMatch?.[1]) {
+    return Array.from(arrayMatch[1].matchAll(/\/([A-Za-z0-9]+)/g)).map((match) => match[1]);
+  }
+
+  const singleMatch = headerWindow.match(/\/Filter\s*\/([A-Za-z0-9]+)/);
+  return singleMatch?.[1] ? [singleMatch[1]] : [];
+}
+
+function decodePdfStream(streamBuffer: Buffer, filters: string[]) {
+  let current = streamBuffer;
+
+  for (const filter of filters) {
+    if (filter === "ASCII85Decode") {
+      try {
+        current = decodeAscii85ToBuffer(current.toString("latin1"));
+      } catch {
+        return null;
+      }
+      continue;
+    }
+
+    if (filter === "FlateDecode") {
+      const inflated = tryInflate(current);
+      if (!inflated) return null;
+      current = inflated;
+      continue;
+    }
+  }
+
+  return current.toString("latin1");
 }
 
 export function extractPdfText(buffer: Buffer) {
@@ -91,13 +166,15 @@ export function extractPdfText(buffer: Buffer) {
   while ((match = streamRegex.exec(latin1)) !== null) {
     const streamBody = match[1] || "";
     const streamBuffer = Buffer.from(streamBody, "latin1");
-    const headerWindow = latin1.slice(Math.max(0, match.index - 220), match.index);
-    const maybeFlate = /FlateDecode/.test(headerWindow);
+    const headerWindow = latin1.slice(Math.max(0, match.index - 320), match.index);
+    const filters = parseFilters(headerWindow);
 
-    const candidates = [streamBody];
-    if (maybeFlate) {
-      const inflated = tryInflate(streamBuffer);
-      if (inflated) candidates.unshift(inflated);
+    const candidates: string[] = [];
+    if (filters.length) {
+      const decoded = decodePdfStream(streamBuffer, filters);
+      if (decoded) candidates.push(decoded);
+    } else {
+      candidates.push(streamBody);
     }
 
     for (const candidate of candidates) {
@@ -107,17 +184,17 @@ export function extractPdfText(buffer: Buffer) {
   }
 
   if (!pieces.length) {
-    diagnostics.push("No BT/ET text blocks were extracted from PDF streams.");
-  }
+    diagnostics.push("No BT/ET text blocks were extracted from decoded PDF streams.");
 
-  const fallbackLiteralMatches = latin1.match(/\((?:\\.|[^\\()])*\)/g) || [];
-  if (fallbackLiteralMatches.length) {
-    const fallbackText = fallbackLiteralMatches
-      .slice(0, 1200)
-      .map((item) => decodePdfEscapes(item.slice(1, -1)))
-      .filter((item) => item.trim())
-      .join("\n");
-    if (fallbackText.trim()) pieces.push(fallbackText);
+    const fallbackLiteralMatches = latin1.match(/\((?:\\.|[^\\()])*\)/g) || [];
+    if (fallbackLiteralMatches.length) {
+      const fallbackText = fallbackLiteralMatches
+        .slice(0, 1200)
+        .map((item) => decodePdfEscapes(item.slice(1, -1)))
+        .filter((item) => item.trim())
+        .join("\n");
+      if (fallbackText.trim()) pieces.push(fallbackText);
+    }
   }
 
   const text = cleanExtractedText(pieces.join("\n\n"));
