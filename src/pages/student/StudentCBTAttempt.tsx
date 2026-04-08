@@ -13,6 +13,7 @@ import { db } from "@/lib/firebase";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -85,8 +86,9 @@ const buildInitResponses = (qs: AttemptQuestion[]) => {
 const mapQuestion = (id: string, data: any): AttemptQuestion => {
   const opts: string[] = Array.isArray(data.options) ? data.options : [];
   const correctIndex = safeNumber(data.correctOption, 0);
-  const positive = safeNumber(data.marks, 4);
-  const negative = Math.abs(safeNumber(data.negativeMarks, 1));
+  // Always normalize to +5 marks and -1 negative marks
+  const positive = 5;
+  const negative = 1;
 
   return {
     id,
@@ -725,7 +727,6 @@ export default function StudentCBTAttempt() {
                 color: currentSectionId === section.id ? "#2563eb" : "#374151",
                 background: "none",
                 border: "none",
-                borderBottom: currentSectionId === section.id ? "3px solid #2563eb" : "3px solid transparent",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
@@ -771,7 +772,7 @@ export default function StudentCBTAttempt() {
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 99999,
+        zIndex: 100, // Lowered from 99999
         height: "100dvh",
         background: "#f3f4f6",
         fontFamily: "Arial, sans-serif",
@@ -782,7 +783,7 @@ export default function StudentCBTAttempt() {
     >
       {/* ─── INSTRUCTIONS GATE ─── */}
       {!isStarted && instructionsOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ width: "100%", maxWidth: 680, borderRadius: 12, background: "#fff", boxShadow: "0 8px 40px rgba(0,0,0,0.25)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #e5e7eb", background: "#1e3a8a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
@@ -864,8 +865,8 @@ export default function StudentCBTAttempt() {
           </div>
           {/* Mobile palette button */}
           <button
-            onClick={() => setMobilePaletteOpen(true)}
-            style={{ display: "none", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, color: "#fff", padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            onClick={(e) => { e.stopPropagation(); setMobilePaletteOpen(true); }}
+            style={{ display: "none", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, color: "#fff", padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", pointerEvents: "auto" }}
             className="mobile-palette-btn"
           >
             <LayoutGrid size={14} /> Palette
@@ -1088,9 +1089,12 @@ export default function StudentCBTAttempt() {
 
       {/* ─── MOBILE PALETTE SHEET ─── */}
       <Sheet open={mobilePaletteOpen} onOpenChange={setMobilePaletteOpen}>
-        <SheetContent side="bottom" className="lg:hidden h-[80dvh] rounded-t-2xl px-0 pb-0">
+        <SheetContent side="bottom" className="lg:hidden h-[80dvh] rounded-t-2xl px-0 pb-0 z-[200]">
           <SheetHeader className="px-4 pt-3 pb-3 border-b text-left" style={{ background: "#1e3a8a" }}>
             <SheetTitle style={{ color: "#fff", fontSize: 14 }}>Question Palette</SheetTitle>
+            <SheetDescription className="sr-only">
+              Quickly navigate between questions and view your attempt status.
+            </SheetDescription>
           </SheetHeader>
           <div style={{ overflowY: "auto", height: "calc(80dvh - 56px)" }}>
             <PaletteContent onClose={() => setMobilePaletteOpen(false)} />
@@ -1100,7 +1104,7 @@ export default function StudentCBTAttempt() {
 
       {/* ─── SUBMIT DIALOG ─── */}
       {submitDialogOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100001, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ width: "100%", maxWidth: 420, borderRadius: 10, background: "#fff", boxShadow: "0 8px 40px rgba(0,0,0,0.25)", overflow: "hidden" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", gap: 12 }}>
               <AlertTriangle size={20} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
@@ -1148,6 +1152,15 @@ export default function StudentCBTAttempt() {
         }
         @media (min-width: 769px) {
           .mobile-palette-btn { display: none !important; }
+          .desktop-palette { display: flex !important; }
+        }
+        /* Fix for Sheet z-index - ensure portals appear on top of test container */
+        [data-radix-portal] {
+          z-index: 200 !important;
+          position: relative;
+        }
+        [data-radix-portal] > div {
+          z-index: 200 !important;
         }
       `}</style>
     </div>

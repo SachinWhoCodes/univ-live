@@ -32,12 +32,14 @@ import { toast } from "sonner";
 
 import EmptyState from "@/components/educator/EmptyState";
 import AiQuestionImportOverlay from "@/components/educator/AiQuestionImportOverlay";
+import InlineStatusTracker from "@/components/educator/InlineStatusTracker";
 import {
   buildImportedQuestionPayload,
   formatNegativeMarksDisplay,
   importQuestionsFromPdf,
   type AiImportPreviewItem,
   type AiImportSummary,
+  type PageProgressUpdate,
 } from "@/lib/aiQuestionImport";
 import { uploadToImageKit } from "@/lib/imagekitUpload";
 
@@ -78,6 +80,15 @@ type TestQuestion = {
 
   isActive?: boolean;
 
+  // AI import metadata
+  source?: "ai_import" | "ai_import_partial" | string;
+  importStatus?: "ready" | "partial";
+  reviewRequired?: boolean;
+  importIssues?: string[];
+  importSourceIndex?: number;
+  rawImportBlock?: string;
+  questionImageUrl?: string;
+
   createdAt?: any;
   updatedAt?: any;
 };
@@ -96,8 +107,9 @@ function normalizeQuestionDoc(id: string, data: any): TestQuestion {
     data?.correctOption ?? data?.correctOptionIndex ?? data?.correctOptionIndex ?? 0
   );
 
-  const marks = data?.marks ?? data?.positiveMarks;
-  const negativeMarks = data?.negativeMarks ?? data?.negative ?? data?.negMarks;
+  // Always normalize to +5 marks and -1 negative marks
+  const marks = 5;
+  const negativeMarks = -1;
 
   const difficulty = (data?.difficulty as Difficulty) || "medium";
 
@@ -110,8 +122,8 @@ function normalizeQuestionDoc(id: string, data: any): TestQuestion {
     difficulty,
     subject: data?.subject ? String(data.subject) : "",
     topic: data?.topic ? String(data.topic) : "",
-    marks: marks != null && marks !== "" ? Number(marks) : undefined,
-    negativeMarks: negativeMarks != null && negativeMarks !== "" ? Number(negativeMarks) : undefined,
+    marks: marks,
+    negativeMarks: negativeMarks,
     isActive: data?.isActive !== false,
     createdAt: data?.createdAt,
     updatedAt: data?.updatedAt,
@@ -148,9 +160,16 @@ async function appendImageToField(current: string, folder = "/test-questions") {
   const f = await pickImageFile();
   if (!f) return { next: current, url: null };
 
-  const { url } = await uploadToImageKit(f, f.name, folder);
-  const imgTag = `\n<img src="${url}" alt="" />\n`;
-  return { next: (current || "") + imgTag, url };
+  try {
+    // Use "website" scope so educators can upload (question-bank scope is admin-only)
+    const { url } = await uploadToImageKit(f, f.name, folder, "website");
+    const imgTag = `\n<img src="${url}" alt="" />\n`;
+    return { next: (current || "") + imgTag, url };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "Failed to upload image";
+    console.error("[Image Upload Error]", errorMsg);
+    throw error; // Re-throw so caller can handle
+  }
 }
 
 export default function TestSeries() {
@@ -261,6 +280,12 @@ export default function TestSeries() {
         sections: bankTest.sections ?? [],
         instructions: bankTest.instructions ?? "",
 
+        // attempts & marking
+        attemptsAllowed: bankTest.attemptsAllowed != null
+          ? Math.max(1, Number(bankTest.attemptsAllowed))
+          : 3,
+        markingScheme: bankTest.markingScheme ?? undefined,
+
         // marks config (omit if missing - Firestore rejects undefined)
         positiveMarks:
           bankTest.positiveMarks != null ? Number(bankTest.positiveMarks) : undefined,
@@ -322,6 +347,7 @@ export default function TestSeries() {
       subject: String(fd.get("subject") || ""),
       level: String(fd.get("level") || "General"),
       durationMinutes: Number(fd.get("duration") || 0),
+      attemptsAllowed: 3,
 
       // educator ownership
       source: "custom",
@@ -615,7 +641,9 @@ function QuestionsManager({
   const [importFileName, setImportFileName] = useState("");
   const [importSummary, setImportSummary] = useState<AiImportSummary | null>(null);
   const [importItems, setImportItems] = useState<AiImportPreviewItem[]>([]);
+  const [importProgressUpdates, setImportProgressUpdates] = useState<PageProgressUpdate[]>([]);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const importAbortControllerRef = useRef<AbortController | null>(null);
 
   const qCol = useMemo(
     () => collection(db, "educators", educatorUid, "my_tests", testId, "questions"),
@@ -816,38 +844,68 @@ function QuestionsManager({
     }
   }
 
+
+
+  // Upload pdf starts here....
   async function handlePdfSelected(file: File | null) {
     if (!file) return;
     if (file.type !== "application/pdf") {
       toast.error("Please upload a PDF file only");
       return;
     }
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error("Please upload a PDF up to 3 MB for AI import");
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error("Please upload a PDF up to 15 MB for AI import");
       return;
     }
+
+    // Create a new abort controller for this import
+    importAbortControllerRef.current = new AbortController();
 
     setImportBusy(true);
     setImportFileName(file.name);
     setImportPreviewOpen(true);
     setImportItems([]);
     setImportSummary(null);
+    setImportProgressUpdates([]);
 
     try {
-      const result = await importQuestionsFromPdf(file, { testTitle, subject: testSubject });
-      const previewItems: AiImportPreviewItem[] = (result.items || []).map((item) => ({
-        ...item,
-        include: item.status === "ready",
-      }));
-      setImportItems(previewItems);
+      const result = await importQuestionsFromPdf(
+        file,
+        { testTitle, subject: testSubject, educatorId: educatorUid },
+        (update) => {
+          setImportProgressUpdates((prev) => [...prev, update]);
+        },
+        importAbortControllerRef.current.signal,
+        // Callback to add questions in real-time as they're detected
+        (newQuestions, pageNum) => {
+          console.log(`[PDF Import] Adding ${newQuestions.length} questions from page ${pageNum}`);
+          setImportItems((prev) => [...prev, ...newQuestions]);
+        }
+      );
+      // Update summary at the end (questions already added via callback)
       setImportSummary(result.summary || null);
       toast.success("AI import preview is ready");
     } catch (error) {
       console.error(error);
-      toast.error(error instanceof Error ? error.message : "Failed to import PDF with AI");
+      const errorMsg = error instanceof Error ? error.message : "Failed to import PDF with AI";
+      // Don't show error toast if it was cancelled
+      if (!errorMsg.includes("cancelled")) {
+        toast.error(errorMsg);
+      }
       setImportPreviewOpen(false);
     } finally {
       setImportBusy(false);
+      importAbortControllerRef.current = null;
+    }
+  }
+
+  function cancelPdfImport() {
+    if (importAbortControllerRef.current) {
+      importAbortControllerRef.current.abort();
+      setImportBusy(false);
+      setImportPreviewOpen(false);
+      setImportProgressUpdates([]); // Clear progress tracker
+      toast.info("PDF import cancelled");
     }
   }
 
@@ -904,6 +962,7 @@ function QuestionsManager({
       setImportPreviewOpen(false);
       setImportItems([]);
       setImportSummary(null);
+      setImportProgressUpdates([]); // Clear progress tracker
       if (!editorOpen) openNew();
     } catch (error) {
       console.error(error);
@@ -928,8 +987,8 @@ function QuestionsManager({
           </Button>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-[380px] border-r flex flex-col bg-muted/10">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <div className="w-full md:w-[380px] h-1/3 md:h-auto border-b md:border-b-0 md:border-r flex flex-col bg-muted/10 shrink-0">
             <div className="p-4 border-b space-y-3">
               <Button className="w-full rounded-xl" onClick={openNew}>
                 <Plus className="mr-2 h-4 w-4" /> Add Question
@@ -955,6 +1014,10 @@ function QuestionsManager({
                   await handlePdfSelected(file);
                 }}
               />
+
+              {importProgressUpdates.length > 0 && (
+                <InlineStatusTracker updates={importProgressUpdates} isProcessing={importBusy} />
+              )}
 
               <div className="relative">
                 <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1099,8 +1162,9 @@ function QuestionsManager({
                           setFormQuestion(next);
                           toast.success("Image added");
                         } catch (e) {
-                          console.error(e);
-                          toast.error("Image upload failed");
+                          const msg = e instanceof Error ? e.message : "Image upload failed";
+                          console.error("[Image upload error]", msg);
+                          toast.error(msg);
                         } finally {
                           setImgBusy(null);
                         }
@@ -1138,8 +1202,9 @@ function QuestionsManager({
                               setFormOptions((prev) => prev.map((v, i) => (i === idx ? next : v)));
                               toast.success("Image added");
                             } catch (e) {
-                              console.error(e);
-                              toast.error("Image upload failed");
+                              const msg = e instanceof Error ? e.message : "Image upload failed";
+                              console.error("[Image upload error]", msg);
+                              toast.error(msg);
                             } finally {
                               setImgBusy(null);
                             }
@@ -1246,8 +1311,9 @@ function QuestionsManager({
                           setFormExplanation(next);
                           toast.success("Image added");
                         } catch (e) {
-                          console.error(e);
-                          toast.error("Image upload failed");
+                          const msg = e instanceof Error ? e.message : "Image upload failed";
+                          console.error("[Image upload error]", msg);
+                          toast.error(msg);
                         } finally {
                           setImgBusy(null);
                         }
@@ -1307,8 +1373,12 @@ function QuestionsManager({
           importing={importBusy}
           saving={savingImported}
           onClose={() => {
-            if (!savingImported) setImportPreviewOpen(false);
+            if (!savingImported && !importBusy) {
+              setImportPreviewOpen(false);
+              setImportProgressUpdates([]); // Clear progress tracker
+            }
           }}
+          onCancel={cancelPdfImport}
           onItemIncludeChange={updateImportItemInclude}
           onSelectReadyOnly={selectReadyOnly}
           onToggleAllPartials={toggleAllPartials}
