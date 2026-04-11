@@ -19,14 +19,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-
 type RoleUI = "student" | "educator";
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const nav = useNavigate();
   const { isTenantDomain, tenantSlug, loading: tenantLoading } = useTenant();
-  const { firebaseUser, profile, loading: authLoading } = useAuth();
+  const { firebaseUser, profile, loading: authLoading, refreshProfile } = useAuth();
 
 
 
@@ -38,7 +37,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [pendingRedirect, setPendingRedirect] = useState<"/student" | "/educator" | null>(null);
+
 
   const [forgotOpen, setForgotOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -55,6 +54,19 @@ export default function Login() {
     }
   }, [isTenantDomain, tenantLoading, roleParam]);
 
+  // Auto-redirect if the user is already authenticated
+  useEffect(() => {
+    if (authLoading || tenantLoading) return;
+    if (!firebaseUser || !profile) return;
+
+    const role = String(profile.role || "").toUpperCase();
+    if (isTenantDomain && role === "STUDENT") {
+      nav("/student", { replace: true });
+    } else if (!isTenantDomain && (role === "EDUCATOR" || role === "ADMIN")) {
+      nav("/educator", { replace: true });
+    }
+  }, [authLoading, tenantLoading, firebaseUser, profile, isTenantDomain, nav]);
+
   const title = useMemo(() => {
     if (tenantLoading) return "Loading…";
     if (isTenantDomain) return `Login to ${tenantSlug || "your coaching"}`;
@@ -63,32 +75,26 @@ export default function Login() {
 
   async function registerStudent(token: string) {
     if (!tenantSlug) return;
-    await fetch("/api/tenant/register-student", {
+    const res = await fetch("/api/tenant/register-student", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ tenantSlug }),
     });
+
+    if (!res.ok) {
+      const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+      if (contentType.includes("application/json")) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `Failed to register student for this tenant (HTTP ${res.status})`);
+      }
+      const text = (await res.text().catch(() => "")).trim();
+      throw new Error(
+        text
+          ? `Failed to register student for this tenant (HTTP ${res.status}): ${text.slice(0, 160)}`
+          : `Failed to register student for this tenant (HTTP ${res.status})`
+      );
+    }
   }
-
-
-  useEffect(() => {
-    if (!pendingRedirect) return;
-    if (authLoading) return;
-    if (!firebaseUser) return;
-
-    const roleDb = String(profile?.role || "").toUpperCase();
-
-    if (pendingRedirect === "/educator" && (roleDb === "EDUCATOR" || roleDb === "ADMIN")) {
-      nav("/educator", { replace: true });
-      setPendingRedirect(null);
-      return;
-    }
-
-    if (pendingRedirect === "/student" && roleDb === "STUDENT") {
-      nav("/student", { replace: true });
-      setPendingRedirect(null);
-    }
-  }, [pendingRedirect, authLoading, firebaseUser, profile, nav]);
 
 
   async function handleForgotPassword() {
@@ -133,8 +139,8 @@ export default function Login() {
       const enrolledTenants: string[] = Array.isArray(data?.enrolledTenants)
         ? data.enrolledTenants
         : typeof data?.tenantSlug === "string"
-        ? [data.tenantSlug]
-        : [];
+          ? [data.tenantSlug]
+          : [];
 
       // ---- tenant domain: students only ----
       if (isTenantDomain) {
@@ -157,9 +163,10 @@ export default function Login() {
         }
 
         const token = await cred.user.getIdToken();
-        await registerStudent(token).catch(() => {});
+        await registerStudent(token);
         toast.success("Welcome back!");
-        setPendingRedirect("/student");
+        await refreshProfile();
+        nav("/student", { replace: true });
         return;
 
       }
@@ -185,7 +192,8 @@ export default function Login() {
       }
 
       toast.success("Logged in!");
-      setPendingRedirect("/educator");
+      await refreshProfile();
+      nav("/educator", { replace: true });
       return;
     } catch (error: any) {
       console.error(error);
@@ -193,7 +201,7 @@ export default function Login() {
       if (error.code === "auth/invalid-credential") msg = "Invalid email or password";
       else msg = error.message || msg;
       toast.error(msg);
-      await auth.signOut().catch(() => {});
+      await auth.signOut().catch(() => { });
     } finally {
       setLoading(false);
     }
@@ -311,10 +319,10 @@ export default function Login() {
               </div>
 
               <Button
-                disabled={loading || authLoading || !!pendingRedirect}
+                disabled={loading || authLoading}
                 className="w-full h-11 text-base bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-colors"
               >
-                {loading || authLoading || pendingRedirect ? (
+                {loading || authLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   "Continue"
@@ -341,7 +349,7 @@ export default function Login() {
         {/* Soft blur background blobs for extra aesthetics */}
         <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-orange-200/50 rounded-full blur-[100px] -translate-x-1/2 -translate-y-1/2" />
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-pink-200/40 rounded-full blur-[100px] translate-x-1/3 translate-y-1/3" />
-        
+
         <div className="relative w-full max-w-xl aspect-[4/5] rounded-[2rem] overflow-hidden shadow-2xl border-8 border-white/50">
           <img
             src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1000&auto=format&fit=crop"

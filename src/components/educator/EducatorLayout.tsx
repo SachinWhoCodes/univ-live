@@ -6,7 +6,6 @@ import {
   Users,
   FileText,
   Key,
-  BarChart3,
   MessageSquare,
   Globe,
   CreditCard,
@@ -27,7 +26,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, stringToColor } from "@/lib/utils";
+import { buildTenantUrl } from "@/lib/tenant";
 import univLogo from "@/assets/univ-logo-1.png";
 import { useAuth } from "@/contexts/AuthProvider";
 import { signOut } from "firebase/auth";
@@ -53,14 +53,16 @@ export default function EducatorLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { firebaseUser, profile } = useAuth();
+  const { profile } = useAuth();
 
-  const educatorName = profile?.displayName || firebaseUser?.displayName || "Educator";
-  const educatorEmail = profile?.email || firebaseUser?.email || "No email";
+  const educatorName = profile?.displayName || profile?.fullName || "Educator";
+  const educatorEmail = profile?.email || "No email";
   const tenantSlug = profile?.tenantSlug || "";
+  const photoURL = profile?.photoURL;
+  const userInitials = initials(educatorName);
 
   useEffect(() => {
-    const uid = firebaseUser?.uid;
+    const uid = profile?.uid;
     if (!uid) {
       setUnreadMessages(0);
       return;
@@ -81,7 +83,7 @@ export default function EducatorLayout() {
     );
 
     return () => unsub();
-  }, [firebaseUser?.uid]);
+  }, [profile?.uid]);
 
   const sidebarItems = useMemo<SidebarItem[]>(
     () => [
@@ -89,7 +91,6 @@ export default function EducatorLayout() {
       { icon: Users, label: "Learners", href: "/educator/learners" },
       { icon: FileText, label: "Test Series", href: "/educator/test-series" },
       { icon: Key, label: "Access Codes", href: "/educator/access-codes" },
-      { icon: BarChart3, label: "Analytics", href: "/educator/analytics" },
       {
         icon: MessageSquare,
         label: "Messages",
@@ -103,7 +104,21 @@ export default function EducatorLayout() {
     [unreadMessages]
   );
 
-  const isActive = (href: string) => location.pathname === href;
+  const isActive = (href: string) => {
+    if (href === "/educator/dashboard") {
+      return location.pathname === "/educator" || location.pathname === href;
+    }
+    if (href === "/educator/learners") {
+      return location.pathname === href || location.pathname.startsWith("/educator/learners/");
+    }
+    return location.pathname === href;
+  };
+
+  const pageTitle = useMemo(() => {
+    if (location.pathname.startsWith("/educator/learners/")) return "Learner Deep Dive";
+    const tail = location.pathname.split("/").pop() || "dashboard";
+    return tail.replace(/-/g, " ");
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {
@@ -120,15 +135,7 @@ export default function EducatorLayout() {
       return;
     }
 
-    const hostname = window.location.hostname;
-    if (hostname === "localhost" || hostname === "127.0.0.1") {
-      window.open(`/?tenant=${encodeURIComponent(tenantSlug)}`, "_blank");
-      return;
-    }
-
-    const parts = hostname.split(".");
-    const rootDomain = parts.length >= 2 ? parts.slice(-2).join(".") : hostname;
-    window.open(`https://${tenantSlug}.${rootDomain}`, "_blank");
+    window.open(buildTenantUrl(tenantSlug, "/"), "_blank");
   };
 
   return (
@@ -213,7 +220,7 @@ export default function EducatorLayout() {
               <span className="text-muted-foreground">Educator</span>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium text-foreground capitalize">
-                {location.pathname.split("/").pop()?.replace("-", " ") || "Dashboard"}
+                {pageTitle}
               </span>
             </div>
           </div>
@@ -223,8 +230,10 @@ export default function EducatorLayout() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2 px-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={firebaseUser?.photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=educator"} />
-                    <AvatarFallback>{initials(educatorName)}</AvatarFallback>
+                    {photoURL && <AvatarImage src={photoURL} />}
+                    <AvatarFallback style={{ backgroundColor: stringToColor(userInitials) }}>
+                      {userInitials}
+                    </AvatarFallback>
                   </Avatar>
                   <span className="hidden sm:block text-sm font-medium">{educatorName}</span>
                 </Button>

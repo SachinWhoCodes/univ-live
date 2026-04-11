@@ -13,6 +13,7 @@ import { db } from "@/lib/firebase";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -22,8 +23,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -85,8 +84,9 @@ const buildInitResponses = (qs: AttemptQuestion[]) => {
 const mapQuestion = (id: string, data: any): AttemptQuestion => {
   const opts: string[] = Array.isArray(data.options) ? data.options : [];
   const correctIndex = safeNumber(data.correctOption, 0);
-  const positive = safeNumber(data.marks, 4);
-  const negative = Math.abs(safeNumber(data.negativeMarks, 1));
+  // Always normalize to +5 marks and -1 negative marks
+  const positive = 5;
+  const negative = 1;
 
   return {
     id,
@@ -159,7 +159,12 @@ export default function StudentCBTAttempt() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [timerStartSeconds, setTimerStartSeconds] = useState(0);
 
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [mobilePaletteOpen, setMobilePaletteOpen] = useState(false);
+
+  // Proctoring state
+  const [exitCount, setExitCount] = useState(0);
+  const [violationModalOpen, setViolationModalOpen] = useState(false);
 
   const attemptIdStorageKey = useMemo(
     () => `${LS_ATTEMPT_ID_PREFIX}${tenantSlug || "main"}__${testId || ""}`,
@@ -305,18 +310,41 @@ export default function StudentCBTAttempt() {
         if (!foundAttempt) {
           const qAttempt = query(
             collection(db, "attempts"),
-            where("studentId", "==", firebaseUser.uid),
-            where("testId", "==", testId),
-            where("educatorId", "==", educatorId),
-            where("status", "==", "in_progress"),
-            orderBy("createdAt", "desc"),
-            limit(1)
+            where("studentId", "==", firebaseUser.uid)
           );
           const aSnap = await getDocs(qAttempt);
           if (!aSnap.empty) {
-            const d = aSnap.docs[0];
-            foundAttempt = { id: d.id, ...(d.data() as AttemptDoc) };
-            localStorage.setItem(attemptIdStorageKey, d.id);
+            const candidates = aSnap.docs
+              .map((d) => ({ id: d.id, ...(d.data() as AttemptDoc) }))
+              .filter(
+                (a) =>
+                  a.testId === testId &&
+                  a.educatorId === educatorId &&
+                  a.status === "in_progress"
+              )
+              .sort((a, b) => {
+                const aStarted = safeNumber((a as any).startedAtMs, 0);
+                const bStarted = safeNumber((b as any).startedAtMs, 0);
+                if (aStarted !== bStarted) return bStarted - aStarted;
+
+                const aCreated =
+                  a?.createdAt && typeof (a.createdAt as any).toMillis === "function"
+                    ? (a.createdAt as any).toMillis()
+                    : 0;
+                const bCreated =
+                  b?.createdAt && typeof (b.createdAt as any).toMillis === "function"
+                    ? (b.createdAt as any).toMillis()
+                    : 0;
+                return bCreated - aCreated;
+              });
+
+            if (candidates.length > 0) {
+              foundAttempt = candidates[0] as any;
+            }
+          }
+
+          if (foundAttempt) {
+            localStorage.setItem(attemptIdStorageKey, foundAttempt.id);
           }
         }
 
@@ -381,11 +409,14 @@ export default function StudentCBTAttempt() {
     }
   }, [loading, authLoading, tenantLoading, isStarted, testId]);
 
-// Keep section in sync
+// Keep section in sync and load saved answer into local state
   useEffect(() => {
     const q = questions[currentIndex];
-    if (q?.sectionId) setCurrentSectionId(q.sectionId);
-  }, [questions, currentIndex]);
+    if (q) {
+      if (q.sectionId) setCurrentSectionId(q.sectionId);
+      setSelectedAnswer(responses[q.id]?.answer || null);
+    }
+  }, [questions, currentIndex, responses]);
 
   // Mark visited (only after started)
   useEffect(() => {
@@ -498,19 +529,69 @@ export default function StudentCBTAttempt() {
     }
   };
 
-  const handleAnswer = (answer: string) => {
-    if (!currentQuestion || !attemptId) return;
+  const handleSelectOption = (answer: string) => {
+    if (!currentQuestion || !isStarted) return;
+    setSelectedAnswer(answer);
+  };
 
+  const handleSaveAndNext = () => {
+    if (!currentQuestion || !attemptId || !isStarted) return;
+    
+    const answer = selectedAnswer;
     setResponses((prev) => ({
       ...prev,
-      [currentQuestion.id]: { ...prev[currentQuestion.id], answer, answered: String(answer).length > 0 },
+      [currentQuestion.id]: { 
+        ...prev[currentQuestion.id], 
+        answer, 
+        answered: String(answer).length > 0,
+        markedForReview: false 
+      },
     }));
 
     queueAttemptUpdate({
       [`responses.${currentQuestion.id}.answer`]: answer,
       [`responses.${currentQuestion.id}.answered`]: String(answer).length > 0,
+      [`responses.${currentQuestion.id}.markedForReview`]: false,
       currentIndex,
     });
+    
+    goToIndex(currentIndex + 1);
+  };
+
+  const handleSaveAndMarkForReview = () => {
+    if (!currentQuestion || !attemptId || !isStarted) return;
+    
+    const answer = selectedAnswer;
+    setResponses((prev) => ({
+      ...prev,
+      [currentQuestion.id]: { 
+        ...prev[currentQuestion.id], 
+        answer, 
+        answered: String(answer).length > 0,
+        markedForReview: true 
+      },
+    }));
+
+    queueAttemptUpdate({
+      [`responses.${currentQuestion.id}.answer`]: answer,
+      [`responses.${currentQuestion.id}.answered`]: String(answer).length > 0,
+      [`responses.${currentQuestion.id}.markedForReview`]: true,
+      currentIndex,
+    });
+    
+    goToIndex(currentIndex + 1);
+  };
+
+  const handleMarkForReviewAndNext = () => {
+    if (!currentQuestion || !attemptId || !isStarted) return;
+    
+    setResponses((prev) => ({
+      ...prev,
+      [currentQuestion.id]: { ...prev[currentQuestion.id], markedForReview: true },
+    }));
+
+    queueAttemptUpdate({ [`responses.${currentQuestion.id}.markedForReview`]: true, currentIndex });
+    goToIndex(currentIndex + 1);
   };
 
   const handleMarkForReview = () => {
@@ -528,14 +609,16 @@ export default function StudentCBTAttempt() {
   const handleClearResponse = () => {
     if (!currentQuestion || !attemptId) return;
 
+    setSelectedAnswer(null);
     setResponses((prev) => ({
       ...prev,
-      [currentQuestion.id]: { ...prev[currentQuestion.id], answer: null, answered: false },
+      [currentQuestion.id]: { ...prev[currentQuestion.id], answer: null, answered: false, markedForReview: false },
     }));
 
     queueAttemptUpdate({
       [`responses.${currentQuestion.id}.answer`]: null,
       [`responses.${currentQuestion.id}.answered`]: false,
+      [`responses.${currentQuestion.id}.markedForReview`]: false,
       currentIndex,
     });
   };
@@ -633,6 +716,55 @@ export default function StudentCBTAttempt() {
     await handleSubmit(true);
   };
 
+  // Proctoring: Prevent copy, cut, paste, context menu
+  useEffect(() => {
+    if (!isStarted) return;
+
+    const preventDefault = (e: Event) => e.preventDefault();
+    
+    document.addEventListener("copy", preventDefault);
+    document.addEventListener("cut", preventDefault);
+    document.addEventListener("paste", preventDefault);
+    document.addEventListener("contextmenu", preventDefault);
+
+    return () => {
+      document.removeEventListener("copy", preventDefault);
+      document.removeEventListener("cut", preventDefault);
+      document.removeEventListener("paste", preventDefault);
+      document.removeEventListener("contextmenu", preventDefault);
+    };
+  }, [isStarted]);
+
+  // Proctoring: Tab switch & Full-screen exit logic
+  useEffect(() => {
+    if (!isStarted) return;
+
+    const handleViolation = () => {
+      setViolationModalOpen(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        handleViolation();
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      // If user exits fullscreen AND they are not currently in instructions or submitting or already warned
+      if (!document.fullscreenElement && isStarted && !submitDialogOpen && !violationModalOpen && !instructionsOpen) {
+        handleViolation();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, [isStarted, submitDialogOpen, violationModalOpen, instructionsOpen, handleSubmit]);
+
   // Warn on reload/close while started
   useEffect(() => {
     if (!isStarted) return;
@@ -662,50 +794,50 @@ export default function StudentCBTAttempt() {
     const isCurrent = idx === currentIndex;
 
     if (isCurrent) {
-      return { background: "#3b82f6", color: "#fff", border: "2px solid #2563eb", fontWeight: 700 };
+      return { background: "#3b82f6", color: "#ffffff", border: "2px solid #1e40af" };
     }
     if (r?.answered && r?.markedForReview) {
-      return { background: "linear-gradient(135deg, #7c3aed 60%, #22c55e 100%)", color: "#fff", border: "2px solid #7c3aed" };
+      return { background: "linear-gradient(135deg, #7c3aed 60%, #22c55e 100%)", color: "#ffffff", border: "1px solid #7c3aed" };
     }
     if (r?.answered) {
-      return { background: "#22c55e", color: "#fff", border: "2px solid #16a34a" };
+      return { background: "#22c55e", color: "#ffffff", border: "1px solid #16a34a" };
     }
     if (r?.markedForReview) {
-      return { background: "#7c3aed", color: "#fff", border: "2px solid #6d28d9" };
+      return { background: "#7c3aed", color: "#ffffff", border: "1px solid #6d28d9" };
     }
     if (r?.visited) {
-      return { background: "#ef4444", color: "#fff", border: "2px solid #dc2626" };
+      return { background: "#ef4444", color: "#ffffff", border: "1px solid #dc2626" };
     }
-    return { background: "#e5e7eb", color: "#374151", border: "2px solid #d1d5db" };
+    return { background: "#e5e7eb", color: "#374151", border: "1px solid #d1d5db" };
   };
 
   const PaletteContent = ({ onClose }: { onClose?: () => void }) => (
     <div style={{ fontFamily: "Arial, sans-serif" }}>
       {/* Legend */}
       <div style={{ padding: "8px 10px", borderBottom: "1px solid #d1d5db" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: 11 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ minWidth: 28, height: 24, borderRadius: 4, background: "#e5e7eb", border: "2px solid #d1d5db", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#374151" }}>{notVisitedCount}</span>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#e5e7eb", border: "1px solid #d1d5db", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 10, color: "#374151" }}>{notVisitedCount}</span>
             <span style={{ color: "#374151" }}>Not Visited</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ minWidth: 28, height: 24, borderRadius: 4, background: "#ef4444", border: "2px solid #dc2626", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff" }}>{notAnsweredCount}</span>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#ef4444", border: "1px solid #dc2626", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 10, color: "#fff" }}>{notAnsweredCount}</span>
             <span style={{ color: "#374151" }}>Not Answered</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ minWidth: 28, height: 24, borderRadius: 4, background: "#22c55e", border: "2px solid #16a34a", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff" }}>{answeredCount}</span>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#22c55e", border: "1px solid #16a34a", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 10, color: "#fff" }}>{answeredCount}</span>
             <span style={{ color: "#374151" }}>Answered</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ minWidth: 28, height: 24, borderRadius: 50, background: "#7c3aed", border: "2px solid #6d28d9", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff" }}>{markedForReviewCount}</span>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#7c3aed", border: "1px solid #6d28d9", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 10, color: "#fff" }}>{markedForReviewCount}</span>
             <span style={{ color: "#374151" }}>Marked for Review</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, gridColumn: "span 2" }}>
-            <span style={{ position: "relative", minWidth: 28, height: 24, borderRadius: 50, background: "#7c3aed", border: "2px solid #6d28d9", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff" }}>
-              <span style={{ position: "absolute", bottom: -4, right: -4, width: 13, height: 13, borderRadius: "50%", background: "#22c55e", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#fff" }}>✓</span>
+            <span style={{ position: "relative", width: 22, height: 22, borderRadius: "50%", background: "#7c3aed", border: "1px solid #6d28d9", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 10, color: "#fff" }}>
+              <span style={{ position: "absolute", bottom: -3, right: -3, width: 11, height: 11, borderRadius: "50%", background: "#22c55e", border: "1px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, color: "#fff" }}>✓</span>
               {answeredAndMarkedCount}
             </span>
-            <span style={{ color: "#374151" }}>Answered &amp; Marked for Review <span style={{ fontSize: 10, color: "#6b7280" }}>(will be considered)</span></span>
+            <span style={{ color: "#374151" }}>Answered &amp; Marked for Review <span style={{ fontSize: 9, color: "#6b7280" }}>(will be considered)</span></span>
           </div>
         </div>
       </div>
@@ -725,7 +857,6 @@ export default function StudentCBTAttempt() {
                 color: currentSectionId === section.id ? "#2563eb" : "#374151",
                 background: "none",
                 border: "none",
-                borderBottom: currentSectionId === section.id ? "3px solid #2563eb" : "3px solid transparent",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
@@ -737,8 +868,8 @@ export default function StudentCBTAttempt() {
       )}
 
       {/* Question grid */}
-      <div style={{ padding: "10px", overflowY: "auto", maxHeight: "calc(100% - 160px)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 5 }}>
+      <div style={{ padding: "15px", overflowY: "auto", maxHeight: "calc(100% - 160px)" }}>
+        <div className="question-grid">
           {questions.map((q, idx) => (
             <button
               key={q.id}
@@ -747,18 +878,23 @@ export default function StudentCBTAttempt() {
                 ...getQuestionBtnStyle(idx),
                 width: "100%",
                 aspectRatio: "1",
-                borderRadius: 4,
-                fontSize: 12,
-                fontWeight: 600,
+                borderRadius: "50%",
+                fontSize: "13px",
+                fontWeight: "bold",
                 cursor: "pointer",
                 transition: "transform 0.1s",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                minHeight: 30,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                padding: 0,
+                lineHeight: "1",
+                textAlign: "center",
               }}
+              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.92)")}
+              onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
             >
-              {String(idx + 1).padStart(2, "0")}
+              <span style={{ display: "block", width: "100%", textAlign: "center", color: "inherit" }}>{idx + 1}</span>
             </button>
           ))}
         </div>
@@ -771,18 +907,19 @@ export default function StudentCBTAttempt() {
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 99999,
+        zIndex: 100,
         height: "100dvh",
         background: "#f3f4f6",
         fontFamily: "Arial, sans-serif",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        userSelect: "none", // Prevent text selection
       }}
     >
       {/* ─── INSTRUCTIONS GATE ─── */}
       {!isStarted && instructionsOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ width: "100%", maxWidth: 680, borderRadius: 12, background: "#fff", boxShadow: "0 8px 40px rgba(0,0,0,0.25)", overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #e5e7eb", background: "#1e3a8a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
@@ -849,29 +986,34 @@ export default function StudentCBTAttempt() {
         </div>
       )}
 
-      {/* ─── TOP HEADER BAR ─── */}
-      <div style={{ background: "#1e3a8a", color: "#fff", padding: "0 12px", height: 44, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.5, truncate: true, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {testMeta.title}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontSize: 12, background: "rgba(255,255,255,0.15)", padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>
-            {isStarted ? (
-              <TimerChip key={timerKey} initialSeconds={timerStartSeconds} onTimeUp={handleTimeUp} />
-            ) : (
-              <span>{testMeta.durationMinutes} min</span>
-            )}
-          </div>
-          {/* Mobile palette button */}
-          <button
-            onClick={() => setMobilePaletteOpen(true)}
-            style={{ display: "none", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, color: "#fff", padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-            className="mobile-palette-btn"
-          >
-            <LayoutGrid size={14} /> Palette
-          </button>
-        </div>
-      </div>
+            {/* ─── TOP HEADER BAR ─── */}
+            <div style={{ background: "#1e3a8a", color: "#fff", padding: "0 12px", height: 44, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.5, truncate: true, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {testMeta.title}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ fontSize: 12, padding: "0", borderRadius: 20, whiteSpace: "nowrap" }}>
+                  {isStarted ? (
+                    <TimerChip 
+                      key={timerKey} 
+                      initialSeconds={timerStartSeconds} 
+                      onTimeUp={handleTimeUp} 
+                      className="bg-white/20 text-white border border-white/30 h-8 py-0 px-3 text-sm font-bold"
+                    />
+                  ) : (
+                    <span style={{ background: "rgba(255,255,255,0.15)", padding: "3px 10px", borderRadius: 20 }}>{testMeta.durationMinutes} min</span>
+                  )}
+                </div>
+                {/* Mobile palette button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMobilePaletteOpen(true); }}
+                  style={{ display: "none", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, color: "#fff", padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", pointerEvents: "auto" }}
+                  className="mobile-palette-btn"
+                >
+                  <LayoutGrid size={14} /> Palette
+                </button>
+              </div>
+            </div>
 
       {/* ─── MAIN BODY ─── */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "row", overflow: "hidden" }}>
@@ -943,7 +1085,7 @@ export default function StudentCBTAttempt() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Options :</div>
                   {currentQuestion.options.map((option, i) => {
-                    const isSelected = responses[currentQuestion.id]?.answer === option.id;
+                    const isSelected = selectedAnswer === option.id;
                     return (
                       <label
                         key={option.id}
@@ -966,7 +1108,7 @@ export default function StudentCBTAttempt() {
                           value={option.id}
                           checked={isSelected}
                           disabled={!isStarted}
-                          onChange={() => handleAnswer(option.id)}
+                          onChange={() => handleSelectOption(option.id)}
                           style={{ marginTop: 2, accentColor: "#1e3a8a", cursor: isStarted ? "pointer" : "not-allowed" }}
                         />
                         <span style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.6 }}>
@@ -986,8 +1128,8 @@ export default function StudentCBTAttempt() {
                   <input
                     type="number"
                     placeholder="Enter integer answer"
-                    value={responses[currentQuestion.id]?.answer || ""}
-                    onChange={(e) => handleAnswer(e.target.value)}
+                    value={selectedAnswer || ""}
+                    onChange={(e) => handleSelectOption(e.target.value)}
                     disabled={!isStarted}
                     style={{ padding: "8px 12px", border: "1.5px solid #d1d5db", borderRadius: 5, fontSize: 14, width: 200, outline: "none" }}
                   />
@@ -1000,7 +1142,7 @@ export default function StudentCBTAttempt() {
           <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#f9fafb", padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
             {/* Save & Next */}
             <button
-              onClick={() => { if (responses[currentQuestion.id]?.answer) goToIndex(currentIndex + 1); else goToIndex(currentIndex + 1); }}
+              onClick={handleSaveAndNext}
               disabled={!isStarted}
               style={{ background: isStarted ? "#22c55e" : "#9ca3af", color: "#fff", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: isStarted ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
             >
@@ -1018,7 +1160,7 @@ export default function StudentCBTAttempt() {
 
             {/* Save & Mark for Review */}
             <button
-              onClick={() => { handleMarkForReview(); goToIndex(currentIndex + 1); }}
+              onClick={handleSaveAndMarkForReview}
               disabled={!isStarted}
               style={{ background: isStarted ? "#7c3aed" : "#9ca3af", color: "#fff", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: isStarted ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
             >
@@ -1027,7 +1169,7 @@ export default function StudentCBTAttempt() {
 
             {/* Mark for Review & Next */}
             <button
-              onClick={() => { handleMarkForReview(); goToIndex(currentIndex + 1); }}
+              onClick={handleMarkForReviewAndNext}
               disabled={!isStarted}
               style={{ background: isStarted ? "#2563eb" : "#9ca3af", color: "#fff", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: isStarted ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
             >
@@ -1088,9 +1230,12 @@ export default function StudentCBTAttempt() {
 
       {/* ─── MOBILE PALETTE SHEET ─── */}
       <Sheet open={mobilePaletteOpen} onOpenChange={setMobilePaletteOpen}>
-        <SheetContent side="bottom" className="lg:hidden h-[80dvh] rounded-t-2xl px-0 pb-0">
-          <SheetHeader className="px-4 pt-3 pb-3 border-b text-left" style={{ background: "#1e3a8a" }}>
+        <SheetContent side="bottom" className="lg:hidden h-[80dvh] rounded-t-2xl px-0 pb-0 z-[200] mobile-palette-sheet">
+          <SheetHeader className="px-4 pt-6 pb-4 border-b text-left relative" style={{ background: "#1e3a8a" }}>
             <SheetTitle style={{ color: "#fff", fontSize: 14 }}>Question Palette</SheetTitle>
+            <SheetDescription className="sr-only">
+              Quickly navigate between questions and view your attempt status.
+            </SheetDescription>
           </SheetHeader>
           <div style={{ overflowY: "auto", height: "calc(80dvh - 56px)" }}>
             <PaletteContent onClose={() => setMobilePaletteOpen(false)} />
@@ -1098,9 +1243,46 @@ export default function StudentCBTAttempt() {
         </SheetContent>
       </Sheet>
 
+      {/* ─── PROCTORING VIOLATION WARNING MODAL ─── */}
+      {violationModalOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, backdropFilter: "blur(5px)" }}>
+          <div style={{ width: "100%", maxWidth: 480, borderRadius: 16, background: "#fff", boxShadow: "0 20px 60px rgba(0,0,0,0.4)", overflow: "hidden", textAlign: "center", padding: "35px 25px" }}>
+            <div style={{ color: "#f59e0b", marginBottom: 20 }}>
+              <AlertTriangle size={64} style={{ margin: "0 auto" }} />
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", marginBottom: 12 }}>Proctoring Warning!</h2>
+            <p style={{ fontSize: 15, color: "#4b5563", marginBottom: 28, lineHeight: 1.6 }}>
+              You have left the test environment (Tab Switch or Full-screen Exit). <br />
+              This is a violation of the test rules. <br /><br />
+              <strong>Do you want to submit and exit the test?</strong>
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button
+                onClick={() => {
+                  handleSubmit(true);
+                  setViolationModalOpen(false);
+                }}
+                style={{ flex: 1, padding: "12px 20px", background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: "pointer", boxShadow: "0 4px 10px rgba(239,68,68,0.2)" }}
+              >
+                Yes, Submit &amp; Exit
+              </button>
+              <button
+                onClick={async () => {
+                  await requestFullscreenSafe();
+                  setViolationModalOpen(false);
+                }}
+                style={{ flex: 1, padding: "12px 20px", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: "pointer", boxShadow: "0 4px 10px rgba(30,58,138,0.2)" }}
+              >
+                No, Return to Test
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── SUBMIT DIALOG ─── */}
       {submitDialogOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100001, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ width: "100%", maxWidth: 420, borderRadius: 10, background: "#fff", boxShadow: "0 8px 40px rgba(0,0,0,0.25)", overflow: "hidden" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", gap: 12 }}>
               <AlertTriangle size={20} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
@@ -1148,6 +1330,41 @@ export default function StudentCBTAttempt() {
         }
         @media (min-width: 769px) {
           .mobile-palette-btn { display: none !important; }
+          .desktop-palette { display: flex !important; }
+        }
+        .question-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 10px;
+        }
+        @media (max-width: 480px) {
+          .question-grid {
+            grid-template-columns: repeat(8, 1fr);
+            gap: 8px;
+          }
+        }
+        /* Fix for Sheet z-index - ensure portals appear on top of test container */
+        [data-radix-portal] {
+          z-index: 200 !important;
+          position: relative;
+        }
+        /* Ensure mobile palette sheet close button is visible */
+        .mobile-palette-sheet button.absolute {
+          color: white !important;
+          opacity: 1 !important;
+          background: rgba(255,255,255,0.1) !important;
+          border-radius: 50% !important;
+          width: 32px !important;
+          height: 32px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          top: 24px !important;
+          right: 12px !important;
+        }
+        .mobile-palette-sheet button.absolute svg {
+          width: 20px !important;
+          height: 20px !important;
         }
       `}</style>
     </div>
