@@ -1,8 +1,9 @@
 import { useState } from "react";
-import  Layout  from "@/components/layout/Layout";
+import  Layout  from "@widgets/layout/Layout";
+import SEO from "@shared/components/SEO";
 import { motion } from "framer-motion";
 import { Check, X } from "lucide-react";
-import { ButtonWithIcon } from "@/components/ui/button";
+import { ButtonWithIcon } from "@shared/ui/button";
 import { Link } from "react-router-dom";
 
 const plans = [
@@ -55,6 +56,11 @@ const comparisonData = [
 const Pricing = () => {
   return (
     <Layout>
+      <SEO
+        title="Pricing Plans — Affordable AI Test Series Platform for Coaching | Univ.live"
+        description="Choose the right plan for your coaching institute. Univ.live offers affordable pricing for AI-powered test series covering JEE, NEET, CUET, CBSE and more."
+        canonical="https://preparekaro.in/pricing"
+      />
       {/* Pricing Header */}
       <section className="section-padding section-1">
         <div className="container-main">

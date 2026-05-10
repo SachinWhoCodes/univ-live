@@ -2,14 +2,16 @@ import { useMemo, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Loader2, Home } from "lucide-react";
 import { toast } from "sonner";
-import { useTenant } from "@/contexts/TenantProvider";
+import { useTenant } from "@app/providers/TenantProvider";
 
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { arrayUnion, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { auth, db } from "@shared/lib/firebase";
+import { Button } from "@shared/ui/button";
+import { Input } from "@shared/ui/input";
+import { Label } from "@shared/ui/label";
+import { registerStudentForTenant } from "@shared/lib/studentRegistration";
+import { generateSessionId, setLocalSessionId, syncSessionWithFirestore } from "@shared/lib/session";
 
 type RoleUI = "student" | "educator";
 
@@ -56,15 +58,6 @@ export default function Signup() {
     return effectiveRole === "educator" ? "Educator Signup" : "Student Signup";
   }, [tenantLoading, isTenantDomain, tenantSlug, effectiveRole]);
 
-  async function callRegisterStudent(token: string) {
-    if (!tenantSlug) return;
-    await fetch("/api/tenant/register-student", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tenantSlug }),
-    });
-  }
-
   async function checkSlugAvailable(slug: string) {
     const s = await getDoc(doc(db, "tenants", slug));
     return !s.exists();
@@ -94,7 +87,7 @@ export default function Signup() {
               displayName: name,
               email,
               educatorId: tenant.educatorId,
-              tenantSlug, // legacy
+              tenantSlug,
               enrolledTenants: arrayUnion(tenantSlug),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
@@ -103,19 +96,35 @@ export default function Signup() {
           );
 
           const token = await cred.user.getIdToken();
-          await callRegisterStudent(token).catch(() => {});
+          try {
+            await registerStudentForTenant(token, tenantSlug);
+          } catch (apiErr: any) {
+            console.error("[Signup] Sync error:", apiErr);
+          }
+
+          const sid = generateSessionId();
+          setLocalSessionId(sid);
+          await syncSessionWithFirestore(cred.user.uid, sid);
+
           toast.success("Account created!");
           nav("/student");
           return;
         } catch (err: any) {
-          // if email exists, try "join" by signing in
           if (err?.code === "auth/email-already-in-use") {
             try {
               const cred2 = await signInWithEmailAndPassword(auth, email, password);
+              const snap = await getDoc(doc(db, "users", cred2.user.uid));
+              const existingRole = String(snap.data()?.role || "").toUpperCase();
+
+              if (existingRole && existingRole !== "STUDENT") {
+                toast.error(`This email is already registered as ${existingRole}. Please use a different email.`);
+                await auth.signOut();
+                return;
+              }
+
               await setDoc(
                 doc(db, "users", cred2.user.uid),
                 {
-                  role: "STUDENT",
                   tenantSlug,
                   enrolledTenants: arrayUnion(tenantSlug),
                   updatedAt: serverTimestamp(),
@@ -124,12 +133,25 @@ export default function Signup() {
               );
 
               const token = await cred2.user.getIdToken();
-              await callRegisterStudent(token).catch(() => {});
+              try {
+                await registerStudentForTenant(token, tenantSlug);
+              } catch (apiErr: any) {
+                console.error("[Signup] Sync error (re-join):", apiErr);
+              }
+
+              const sid = generateSessionId();
+              setLocalSessionId(sid);
+              await syncSessionWithFirestore(cred2.user.uid, sid);
+
               toast.success("Signed in and enrolled!");
               nav("/student");
               return;
-            } catch {
-              toast.error("Account already exists. Please login instead.");
+            } catch (innerErr: any) {
+              if (innerErr?.code === "auth/invalid-credential") {
+                toast.error("Wrong password. Please login instead.");
+              } else if (!innerErr?.code) {
+                throw innerErr;
+              }
               return;
             }
           }
@@ -147,7 +169,16 @@ export default function Signup() {
       if (!slug) throw new Error("Please enter a valid tenant slug");
       if (!(await checkSlugAvailable(slug))) throw new Error("Tenant slug already taken");
 
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      let cred;
+      try {
+        cred = await createUserWithEmailAndPassword(auth, email, password);
+      } catch (err: any) {
+        if (err?.code === "auth/email-already-in-use") {
+          toast.error("This email already has an account. Please login instead.");
+          return;
+        }
+        throw err;
+      }
       await updateProfile(cred.user, { displayName: name });
 
       const uid = cred.user.uid;
@@ -206,7 +237,11 @@ export default function Signup() {
       <div className="flex flex-col min-h-screen p-6 lg:p-12 relative">
         {/* Header / Nav */}
         <div className="flex justify-between items-center mb-6">
-          <div className="font-bold text-2xl tracking-tighter">UNIV.LIVE</div>
+           {effectiveRole === "educator" ? (
+            <img src="/logo.png" className="w-25 h-10" alt="UNIV.LIVE Logo" />
+          ) : (
+            <div />
+          )}
           <Link
             to="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"

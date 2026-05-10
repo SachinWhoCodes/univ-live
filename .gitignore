@@ -1,11 +1,9 @@
 # Logs
-logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
 .env
 .env.*
@@ -15,7 +13,10 @@ dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# TypeScript
+*.tsbuildinfo
+
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -26,20 +27,8 @@ dist-ssr
 *.sln
 *.sw?
 
+# Tooling caches
+.eslintcache
+.turbo
 
-AI_ANALYSIS_FEATURE.md
-AI_ANALYSIS_IMPLEMENTATION.md
-AI_ANALYSIS_QUICK_REF.md
-AI_ANALYSIS_QUICK_REF.md
-DEPLOYMENT_GUIDE.md
-FILES_CHANGED_SUMMARY.md
-GIT_FIX_SUMMARY.md
-IMPLEMENTATION_COMPLETE.md
-STUDENT_EXPERIENCE.md
-SYSTEM_ARCHITECTURE.md
-AI_ANALYSIS_QUICK_START.md
-AI_WEBSITE_CONTENT_COMPLETE.md
-AI_WEBSITE_CONTENT_GENERATION_QUICKREF.md
-AI_WEBSITE_CONTENT_GENERATION.md
-AI_WEBSITE_CONTENT_IMPLEMENTATION_CHECKLIST.md
-AI_WEBSITE_CONTENT_VISUAL_FLOW.md
+.vercel

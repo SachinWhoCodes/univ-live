@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdmin } from "../_lib/firebaseAdmin.js";
 import { requireUser } from "../_lib/requireUser.js";
+import { notifyDiscord } from "../_lib/discordLogger.js";
 
 function normSlug(raw: string) {
   return String(raw || "")
@@ -91,6 +92,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (owner && owner !== uid) throw new Error("This subdomain slug is already taken.");
       }
 
+      // Firestore transaction rule: all reads must finish before any writes.
+      const oldTenantRef = db.doc(`tenants/${oldSlug}`);
+      const oldTenantSnap = await tx.get(oldTenantRef);
+
       // Ensure new slug mapping exists
       const newTenantPayload: any = {
         educatorId: uid,
@@ -101,8 +106,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tx.set(newTenantRef, newTenantPayload, { merge: true });
 
       // Keep old slug reserved (prevents hijacking; keeps old links working)
-      const oldTenantRef = db.doc(`tenants/${oldSlug}`);
-      const oldTenantSnap = await tx.get(oldTenantRef);
       const oldTenantPayload: any = {
         educatorId: uid,
         tenantSlug: oldSlug,
@@ -148,6 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ ok: true, oldSlug: oldSlug0, newSlug, studentsUpdated });
   } catch (e: any) {
     console.error(e);
+    await notifyDiscord(e, req, "change-slug");
     const msg = String(e?.message || "Server error");
     if (msg.toLowerCase().includes("forbidden")) return res.status(403).json({ error: "Forbidden" });
     return res.status(500).json({ error: msg });

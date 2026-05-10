@@ -29,83 +29,35 @@ import {
   BookOpen
 } from "lucide-react";
 
-import { useTenant } from "@/contexts/TenantProvider";
-import { useFavicon } from "@/hooks/useFavicon";
-import { db } from "@/lib/firebase";
+import { useTenant } from "@app/providers/TenantProvider";
+import { useFavicon } from "@shared/hooks/useFavicon";
+import { db } from "@shared/lib/firebase";
 import { collection, documentId, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@shared/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@shared/ui/avatar";
+import { Badge } from "@shared/ui/badge";
 
-type FacultyItem = { name: string; subject?: string; designation?: string; experience?: string; bio?: string; image?: string };
-type TestimonialItem = { name: string; course?: string; rating?: number; text: string; avatar?: string };
-
-type TestSeries = {
-  id: string;
-  title: string;
-  description: string;
-  price: string | number;
-  coverImage?: string;
-  subject?: string;
-  difficulty?: string;
-  testsCount?: number;
-  durationMinutes?: number;
-};
-
-function initials(name: string) {
-  return (name || "U")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((x) => x[0]?.toUpperCase())
-    .join("");
-}
-
-function isTruthyUrl(v: any) {
-  return typeof v === "string" && v.trim().length > 0;
-}
+import { initials, isTruthyUrl } from "@/themes/coaching/shared/themeUtils";
+import type { FacultyItem, TestimonialItem, TestSeries } from "@/themes/coaching/shared/themeTypes";
 
 export default function TenantHomeTheme2() {
   const { tenant, loading } = useTenant();
   const [mobileOpen, setMobileOpen] = useState(false);
-
   const [featured, setFeatured] = useState<TestSeries[]>([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-neutral-400">
-        <Loader2 className="h-5 w-5 animate-spin mr-2 text-orange-500" />
-        Loading...
-      </div>
-    );
-  }
-
-  if (!tenant) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
-        <div className="text-center px-6">
-          <h2 className="text-2xl font-bold">Coaching not found</h2>
-          <p className="text-neutral-400 mt-2">
-            This coaching website does not exist. Check the URL or contact support.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const config = tenant.websiteConfig || {};
-
-  const coachingName = config.coachingName || tenant.coachingName || "Your Institute";
-  const tagline = config.tagline || tenant.tagline || "Learn smarter. Score higher.";
+  const config = tenant?.websiteConfig || {};
+  const coachingName = config.coachingName || (tenant as any)?.coachingName || "Your Institute";
+  const tagline = config.tagline || (tenant as any)?.tagline || "Learn smarter. Score higher.";
   const logoUrl: string | undefined = config.logoUrl;
-
-  // Set dynamic favicon + page title for this educator's subdomain
-  useFavicon(logoUrl, coachingName);
-
   const faculty: FacultyItem[] = Array.isArray(config.faculty) ? config.faculty : [];
   const testimonials: TestimonialItem[] = Array.isArray(config.testimonials) ? config.testimonials : [];
+  const educatorId = tenant?.educatorId;
+  const featuredIds: string[] = Array.isArray(config.featuredTestIds) ? config.featuredTestIds : [];
+  const featuredKey = featuredIds.join(",");
+
+  useFavicon(logoUrl, coachingName);
 
   const socials: Record<string, string> = useMemo(() => {
     const s = (config.socials || {}) as Record<string, string>;
@@ -115,10 +67,6 @@ export default function TenantHomeTheme2() {
     });
     return cleaned;
   }, [config.socials]);
-
-  const educatorId = tenant.educatorId;
-  const featuredIds: string[] = Array.isArray(config.featuredTestIds) ? config.featuredTestIds : [];
-  const featuredKey = featuredIds.join(",");
 
   useEffect(() => {
     if (!educatorId) return;
@@ -158,6 +106,28 @@ export default function TenantHomeTheme2() {
 
     loadFeatured();
   }, [educatorId, featuredKey]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-neutral-400">
+        <Loader2 className="h-5 w-5 animate-spin mr-2 text-orange-500" />
+        Loading...
+      </div>
+    );
+  }
+
+  if (!tenant) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
+        <div className="text-center px-6">
+          <h2 className="text-2xl font-bold">Coaching not found</h2>
+          <p className="text-neutral-400 mt-2">
+            This coaching website does not exist. Check the URL or contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // UPDATED NAVIGATION
   const navLinks = [
@@ -651,14 +621,14 @@ export default function TenantHomeTheme2() {
             <div>
               <div className="font-semibold text-white mb-6">Powered By</div>
               <div className="text-sm text-neutral-400 leading-relaxed">
-                UNIV.LIVE helps educators publish test series, onboard students, and track progress at scale.
+                PREPAREKARO.IN helps educators publish test series, onboard students, and track progress at scale.
               </div>
             </div>
           </div>
 
           <div className="border-t border-neutral-800 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-neutral-600">
             <span>© {new Date().getFullYear()} {coachingName}. All rights reserved.</span>
-            <span>Built with <span className="text-neutral-500 font-medium">UNIV.LIVE</span></span>
+            <span>Built with <span className="text-neutral-500 font-medium">PREPAREKARO.IN</span></span>
           </div>
         </div>
       </footer>

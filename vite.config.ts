@@ -8,11 +8,24 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: mode === "vercel" ? "http://localhost:3000" : "https://www.preparekaro.in",
+        changeOrigin: true,
+        secure: mode !== "vercel",
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@app": path.resolve(__dirname, "./src/app"),
+      "@features": path.resolve(__dirname, "./src/features"),
+      "@entities": path.resolve(__dirname, "./src/entities"),
+      "@widgets": path.resolve(__dirname, "./src/widgets"),
+      "@shared": path.resolve(__dirname, "./src/shared"),
     },
   },
 }));

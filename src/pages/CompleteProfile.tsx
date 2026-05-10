@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Home, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { auth, db } from "@/lib/firebase";
+import { auth, db } from "@shared/lib/firebase";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -17,10 +17,11 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useTenant } from "@/contexts/TenantProvider";
+import { Button } from "@shared/ui/button";
+import { Input } from "@shared/ui/input";
+import { Label } from "@shared/ui/label";
+import { useTenant } from "@app/providers/TenantProvider";
+import { buildTenantUrl } from "@shared/lib/tenant";
 
 type RoleUI = "student" | "educator";
 
@@ -33,15 +34,8 @@ function normSlug(raw: string) {
     .replace(/(^-|-$)/g, "");
 }
 
-function appDomain() {
-  return (import.meta as any).env?.VITE_APP_DOMAIN || "univ.live";
-}
-
 function studentRedirectUrl(tenantSlug: string) {
-  if (window.location.hostname === "localhost") {
-    return `/student?tenant=${encodeURIComponent(tenantSlug)}`;
-  }
-  return `https://${tenantSlug}.${appDomain()}/student`;
+  return buildTenantUrl(tenantSlug, "/student");
 }
 
 export default function CompleteProfile() {
@@ -76,11 +70,25 @@ export default function CompleteProfile() {
   }, [tenantLoading, effectiveRole]);
 
   async function callRegisterStudent(token: string, tSlug: string) {
-    await fetch("/api/tenant/register-student", {
+    const res = await fetch("/api/tenant/register-student", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ tenantSlug: tSlug }),
     });
+
+    if (!res.ok) {
+      const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+      if (contentType.includes("application/json")) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `Failed to register student for this tenant (HTTP ${res.status})`);
+      }
+      const text = (await res.text().catch(() => "")).trim();
+      throw new Error(
+        text
+          ? `Failed to register student for this tenant (HTTP ${res.status}): ${text.slice(0, 160)}`
+          : `Failed to register student for this tenant (HTTP ${res.status})`
+      );
+    }
   }
 
   async function checkSlugAvailable(slug: string, myUid: string) {
@@ -180,7 +188,7 @@ export default function CompleteProfile() {
         );
 
         const token = await u.getIdToken();
-        await callRegisterStudent(token, tSlug).catch(() => {});
+        await callRegisterStudent(token, tSlug);
 
         toast.success("Profile completed!");
         if (isTenantDomain) {
@@ -280,7 +288,7 @@ export default function CompleteProfile() {
     <div className="min-h-screen w-full lg:grid lg:grid-cols-2 bg-background">
       <div className="flex flex-col min-h-screen p-6 lg:p-12 relative">
         <div className="flex justify-between items-center mb-8">
-          <div className="font-bold text-2xl tracking-tighter">UNIV.LIVE</div>
+          <div className="font-bold text-2xl tracking-tighter">PREPAREKARO.IN</div>
           <Link
             to="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"

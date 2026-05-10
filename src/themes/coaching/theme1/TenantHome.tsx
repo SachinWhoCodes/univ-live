@@ -30,44 +30,16 @@ import {
   ChevronRight
 } from "lucide-react";
 
-import { useTenant } from "@/contexts/TenantProvider";
-import { db } from "@/lib/firebase";
+import { useTenant } from "@app/providers/TenantProvider";
+import { db } from "@shared/lib/firebase";
 import { collection, documentId, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 
-import { Button } from "@/components/ui/button";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@shared/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@shared/ui/accordion";
+import { Avatar, AvatarFallback, AvatarImage } from "@shared/ui/avatar";
 
-type StatItem = { label: string; value: string; icon?: string };
-type AchievementItem = { title: string; description: string; icon?: string };
-type FacultyItem = { name: string; subject?: string; designation?: string; experience?: string; bio?: string; image?: string };
-type TestimonialItem = { name: string; course?: string; rating?: number; text: string; avatar?: string };
-type FAQItem = { question: string; answer: string };
-
-type TestSeries = {
-  id: string;
-  title: string;
-  description: string;
-  price: string | number;
-  coverImage?: string;
-  subject?: string;
-  difficulty?: string;
-  testsCount?: number;
-  durationMinutes?: number;
-};
-
-function initials(name: string) {
-  return (name || "U")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((x) => x[0]?.toUpperCase())
-    .join("");
-}
-
-function isTruthyUrl(v: any) {
-  return typeof v === "string" && v.trim().length > 0;
-}
+import { initials, isTruthyUrl } from "@/themes/coaching/shared/themeUtils";
+import type { StatItem, AchievementItem, FacultyItem, TestimonialItem, FAQItem, TestSeries } from "@/themes/coaching/shared/themeTypes";
 
 export default function TenantHomeTheme2() {
   const { tenant, loading } = useTenant();
@@ -77,42 +49,19 @@ export default function TenantHomeTheme2() {
   const [loadingFeatured, setLoadingFeatured] = useState(true);
   const [activeTestId, setActiveTestId] = useState<string | null>(null);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fcfaf8] text-stone-500">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading...
-      </div>
-    );
-  }
-
-  if (!tenant) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fcfaf8] text-stone-900">
-        <div className="text-center px-6">
-          <h2 className="text-3xl font-medium tracking-tight">Coaching not found</h2>
-          <p className="text-stone-500 mt-2">
-            This coaching website does not exist. Check the URL or contact support.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const config = tenant.websiteConfig || {};
-
-  const coachingName = config.coachingName || tenant.coachingName || "Your Institute";
-  const tagline = config.tagline || tenant.tagline || "Learn smarter. Score higher.";
-  
+  const config = tenant?.websiteConfig || {};
+  const coachingName = config.coachingName || (tenant as any)?.coachingName || "Your Institute";
+  const tagline = config.tagline || (tenant as any)?.tagline || "Learn smarter. Score higher.";
   const defaultHeroImage = "https://plus.unsplash.com/premium_photo-1683887034491-f58b4c4fca72?q=80&w=869&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
   const finalHeroImage = config.heroImage || defaultHeroImage;
-
   const stats: StatItem[] = Array.isArray(config.stats) ? config.stats : [];
   const achievements: AchievementItem[] = Array.isArray(config.achievements) ? config.achievements : [];
   const faculty: FacultyItem[] = Array.isArray(config.faculty) ? config.faculty : [];
   const testimonials: TestimonialItem[] = Array.isArray(config.testimonials) ? config.testimonials : [];
-
   const faqs: FAQItem[] = Array.isArray(config.faqs) && config.faqs.length > 0 ? config.faqs : [];
+  const educatorId = tenant?.educatorId;
+  const featuredIds: string[] = Array.isArray(config.featuredTestIds) ? config.featuredTestIds : [];
+  const featuredKey = featuredIds.join(",");
 
   const socials: Record<string, string> = useMemo(() => {
     const s = (config.socials || {}) as Record<string, string>;
@@ -122,10 +71,6 @@ export default function TenantHomeTheme2() {
     });
     return cleaned;
   }, [config.socials]);
-
-  const educatorId = tenant.educatorId;
-  const featuredIds: string[] = Array.isArray(config.featuredTestIds) ? config.featuredTestIds : [];
-  const featuredKey = featuredIds.join(",");
 
   useEffect(() => {
     if (!educatorId) return;
@@ -166,6 +111,28 @@ export default function TenantHomeTheme2() {
 
     loadFeatured();
   }, [educatorId, featuredKey]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fcfaf8] text-stone-500">
+        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+        Loading...
+      </div>
+    );
+  }
+
+  if (!tenant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fcfaf8] text-stone-900">
+        <div className="text-center px-6">
+          <h2 className="text-3xl font-medium tracking-tight">Coaching not found</h2>
+          <p className="text-stone-500 mt-2">
+            This coaching website does not exist. Check the URL or contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // UPDATED NAVIGATION LINKS
   const navLinks = [
@@ -800,7 +767,7 @@ export default function TenantHomeTheme2() {
                 })}
               </div>
               <p className="text-xs font-light text-stone-500">
-                Powered by UNIV.LIVE to help educators publish and scale.
+                Powered by PREPAREKARO.IN to help educators publish and scale.
               </p>
             </div>
           </div>
